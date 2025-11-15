@@ -6,12 +6,7 @@
 // ================================================================
 // Select the display driver IC
 #define ILI9341_DRIVER      // Generic ILI9341 240x320 TFT display
-
-// ================================================================
-// Display Resolution
-// ================================================================
-#define TFT_WIDTH  240
-#define TFT_HEIGHT 320
+// Note: Width and height are automatically set by ILI9341_DRIVER
 
 // ================================================================
 // ESP32 GPIO Pin Definitions for TFT Display
