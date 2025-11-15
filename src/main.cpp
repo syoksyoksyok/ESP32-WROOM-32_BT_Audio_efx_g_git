@@ -70,8 +70,8 @@ constexpr float PITCH_LUT_SCALE = (float)(257 - 1) / PITCH_RANGE_SEMITONES; // P
 // SECTION: Audio Engine Constants
 // ================================================================= //
 constexpr int RING_BUFFER_SIZE = 4096;
-#define GRAIN_BUFFER_SIZE 32768
-#define MAX_GRAIN_SIZE    32768
+#define GRAIN_BUFFER_SIZE 65536  // 拡張: 約1.5秒分のバッファ (44.1kHz時)
+#define MAX_GRAIN_SIZE    65536  // 拡張: 最大グレイン長 約1.5秒
 #define GRAIN_BUFFER_MASK (GRAIN_BUFFER_SIZE - 1)
 constexpr int MAX_GRAINS = 6;
 constexpr int MIN_GRAIN_SIZE = 128;
