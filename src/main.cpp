@@ -66,6 +66,31 @@ constexpr float PITCH_CHANGE_THRESHOLD = 0.05f;
 constexpr float PITCH_RANGE_SEMITONES_HALF = PITCH_RANGE_SEMITONES / 2.0f;
 constexpr float PITCH_LUT_SCALE = (float)(257 - 1) / PITCH_RANGE_SEMITONES; // PITCH_LUT_SIZE is 257
 
+// Pitch randomization range
+constexpr float PITCH_RANDOM_MIN = -20.0f;
+constexpr float PITCH_RANDOM_MAX = 7.0f;
+constexpr float PITCH_RANDOM_RANGE = PITCH_RANDOM_MAX - PITCH_RANDOM_MIN; // 27.0f
+
+// Grain calculation constants
+constexpr float POSITION_TEXTURE_SCALE = 0.6f;  // 3/5 ratio for position randomization
+constexpr float PITCH_TEXTURE_VARIANCE = 0.2f;   // Pitch variation from texture
+constexpr float STEREO_SPREAD_SCALE = 0.5f;      // Stereo spread scaling factor
+constexpr int16_t MIN_SIZE_Q15 = 3277;           // Minimum grain size in Q15 (~10% of range)
+
+// Soft takeover parameters
+constexpr float SOFT_TAKEOVER_DEADBAND = 0.03f;  // 3% tolerance for soft takeover
+
+// Tempo validation bounds
+constexpr unsigned long MIN_TEMPO_INTERVAL_US = 10000;    // ~6000 BPM maximum
+constexpr unsigned long MAX_TEMPO_INTERVAL_US = 4000000;  // ~15 BPM minimum
+
+// Feedback LUT range
+constexpr float FEEDBACK_LUT_MIN = 0.1f;
+constexpr float FEEDBACK_LUT_RANGE = 0.5f;  // Range from 0.1 to 0.6
+
+// Pan center value (Q15 format)
+constexpr int16_t PAN_CENTER_Q15 = 23170;  // ~0.707 in Q15 format for center panning
+
 // ================================================================= //
 // SECTION: Audio Engine Constants
 // ================================================================= //
@@ -176,7 +201,7 @@ struct Grain {
         active = false;
         position_q16 = 0;
         speed_q16 = 1 << 16;
-        reciprocal_length_q32 = 0; panL_q15 = 23170; panR_q15 = 23170;
+        reciprocal_length_q32 = 0; panL_q15 = PAN_CENTER_Q15; panR_q15 = PAN_CENTER_Q15;
     }
 };
 struct GranParams {
@@ -300,6 +325,7 @@ void renderAllGrains(int32_t& wetL, int32_t& wetR);
 void handleDejaVuTrigger();
 void randomizeDejaVuBuffer();
 void randomizeClockResolution();
+void enablePitchSoftTakeover(float pitchSemitones);
 void updateTempo(unsigned long tap_time_us);
 void IRAM_ATTR triggerISR();
 uint16_t calculateGrainLength(int16_t base_size, int16_t texture);
@@ -316,6 +342,9 @@ void loadSnapshot(int slot);
 void initializeSnapshots();
 void updateParametersFromPots();
 void updateDisplay();
+bool updateFlashScreens();
+void updatePot4ModeLabels(uint16_t txt_color, uint16_t bg_color, uint16_t highlight_color);
+void updateTriggerLED();
 void drawUiFrame();
 void drawParameterBar(int x, int y, int16_t val, int16_t& lastVal, uint16_t color);
 void drawPitchBar(int x, int y, float val, float& lastVal, uint16_t color);
@@ -470,8 +499,22 @@ void granularTask(void* param) {
         .data_out_num = I2S_OUT_DOUT,
         .data_in_num = I2S_PIN_NO_CHANGE
     };
-    i2s_driver_install(I2S_NUM_1, &i2s_config, 0, NULL);
-    i2s_set_pin(I2S_NUM_1, &pin_config);
+
+    // Initialize I2S driver with error checking
+    esp_err_t i2s_err = i2s_driver_install(I2S_NUM_1, &i2s_config, 0, NULL);
+    if (i2s_err != ESP_OK) {
+        Serial.printf("ERROR: I2S driver install failed: %d\n", i2s_err);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    i2s_err = i2s_set_pin(I2S_NUM_1, &pin_config);
+    if (i2s_err != ESP_OK) {
+        Serial.printf("ERROR: I2S set pin failed: %d\n", i2s_err);
+        vTaskDelete(NULL);
+        return;
+    }
+
     i2s_zero_dma_buffer(I2S_NUM_1);
 
     while (true) {
@@ -551,7 +594,18 @@ void processAudioSample(int16_t inputSample) {
 
     if (i2s_buffer_pos >= I2S_BUFFER_SAMPLES * 2) {
         size_t bytes_written;
-        i2s_write(I2S_NUM_1, i2s_buffer, i2s_buffer_pos*sizeof(int16_t), &bytes_written, portMAX_DELAY);
+        esp_err_t i2s_result = i2s_write(I2S_NUM_1, i2s_buffer, i2s_buffer_pos*sizeof(int16_t), &bytes_written, portMAX_DELAY);
+
+        // Check for I2S write errors (avoid logging in real-time path to prevent performance degradation)
+        if (i2s_result != ESP_OK) {
+            static uint32_t error_count = 0;
+            error_count++;
+            // Only log every 1000th error to avoid flooding serial output
+            if (error_count % 1000 == 0) {
+                Serial.printf("WARNING: I2S write error: %d (count: %u)\n", i2s_result, error_count);
+            }
+        }
+
         i2s_buffer_pos = 0;
     }
 }
@@ -602,6 +656,19 @@ void handleDejaVuTrigger() {
     g_deja_vu_step = (g_deja_vu_step + 1) % DEJA_VU_BUFFER_SIZE;
 }
 
+// ================================================================= //
+// SECTION: Soft Takeover Helper
+// ================================================================= //
+void enablePitchSoftTakeover(float pitchSemitones) {
+    // Convert pitch in semitones to normalized position (0..1) for soft takeover
+    float v = (pitchSemitones / PITCH_RANGE_SEMITONES) + 0.5f;
+    if (!isfinite(v)) v = 0.5f;
+    if (v < 0.0f) v = 0.0f;
+    if (v > 1.0f) v = 1.0f;
+    g_soft_takeover_target_pitch = v;
+    g_soft_takeover_active_pitch = true;
+}
+
 void randomizeDejaVuBuffer() {
     // Deja Vuバッファのランダマイズ
     for (int i = 0; i < DEJA_VU_BUFFER_SIZE; i++) {
@@ -620,9 +687,9 @@ void randomizeDejaVuBuffer() {
     g_params.feedback_q15     = g_feedback_lut_q15[esp_random() % FEEDBACK_LUT_SIZE];
     g_params.dryWet_q15       = 32767;
 
-    // 0.0f～1.0fのランダムなfloatを生成し、-20.0f～+7.0fの範囲に変換する
+    // 0.0f～1.0fのランダムなfloatを生成し、pitch範囲に変換する
     float random_float = (float)esp_random() / (float)UINT32_MAX;
-    g_params.pitch_f = -20.0f + (27.0f * random_float); // -20.0 から +7.0 の範囲
+    g_params.pitch_f = PITCH_RANDOM_MIN + (PITCH_RANDOM_RANGE * random_float);
 
     g_params.loop_length      = 2 + (esp_random() % (DEJA_VU_BUFFER_SIZE - 1));
     g_params.mode             = (esp_random() % 2 == 0) ?
@@ -632,12 +699,7 @@ void randomizeDejaVuBuffer() {
 
     g_deja_vu_step = 0;
     // ★ ピッチつまみ用ソフトテイクオーバー有効化
-    float v = (g_params.pitch_f / PITCH_RANGE_SEMITONES) + 0.5f;
-    if (!isfinite(v)) v = 0.5f;
-    if (v < 0.0f) v = 0.0f;
-    if (v > 1.0f) v = 1.0f;
-    g_soft_takeover_target_pitch = v;
-    g_soft_takeover_active_pitch = true;
+    enablePitchSoftTakeover(g_params.pitch_f);
     // 演出（フラッシュ表示）
     g_randomize_flash_active = true;
     g_randomize_flash_start  = millis();
@@ -710,13 +772,13 @@ int16_t renderGrain(Grain& g) {
 uint16_t calculateGrainLength(int16_t base_size, int16_t texture) {
     int16_t rand_val = g_random_lut_q15[(g_random_index++)&(RANDOM_LUT_SIZE-1)];
     int32_t size_rand_comp = ((int32_t)texture * rand_val) >> 15;
-    int16_t size_q15 = constrain(base_size + (size_rand_comp >> 1), 3277, 32767);
+    int16_t size_q15 = constrain(base_size + (size_rand_comp >> 1), MIN_SIZE_Q15, 32767);
     return MIN_GRAIN_SIZE + (((uint32_t)(MAX_GRAIN_SIZE - MIN_GRAIN_SIZE) * size_q15) >> 15);
 }
 
 uint16_t calculateGrainStartPosition(int16_t base_pos, int16_t texture) {
     int16_t rand_val = g_random_lut_q15[(g_random_index++)&(RANDOM_LUT_SIZE-1)];
-    int32_t pos_rand_comp = (((int32_t)texture * rand_val) >> 15) * 3/5;
+    int32_t pos_rand_comp = (int32_t)((((int32_t)texture * rand_val) >> 15) * POSITION_TEXTURE_SCALE);
     int16_t pos_q15 = constrain(base_pos + pos_rand_comp, 0, 32767);
     uint32_t lookback = ((uint32_t)GRAIN_BUFFER_SIZE * pos_q15) >> 15;
     return (g_grainWritePos - lookback + GRAIN_BUFFER_SIZE) & GRAIN_BUFFER_MASK;
@@ -724,7 +786,7 @@ uint16_t calculateGrainStartPosition(int16_t base_pos, int16_t texture) {
 
 int32_t calculateGrainSpeed(float base_pitch, int16_t texture) {
     int16_t rand_val = g_random_lut_q15[(g_random_index++)&(RANDOM_LUT_SIZE-1)];
-    float pitch_rand_comp = (texture/32767.0f) * 0.2f * (rand_val/32767.0f);
+    float pitch_rand_comp = (texture/32767.0f) * PITCH_TEXTURE_VARIANCE * (rand_val/32767.0f);
     float pitch = base_pitch + pitch_rand_comp;
 
     // ★★★ 変更点：事前計算した定数を使って割り算を掛け算に置き換え ★★★
@@ -741,7 +803,7 @@ int32_t calculateGrainSpeed(float base_pitch, int16_t texture) {
 
 void calculateGrainPanning(int16_t& panL, int16_t& panR) {
     float pan_random = g_random_pan_lut[(g_random_pan_index++)&(RANDOM_PAN_LUT_SIZE-1)];
-    float pan = 0.5f+(g_params.stereoSpread_q15/32767.0f)*0.5f*pan_random;
+    float pan = 0.5f+(g_params.stereoSpread_q15/32767.0f)*STEREO_SPREAD_SCALE*pan_random;
     pan = constrain(pan,0.0f,1.0f);
 
     float pan_index_f = pan*(PAN_LUT_SIZE-1);
@@ -762,7 +824,7 @@ void updateTempo(unsigned long tap_time_us) {
     static unsigned long last_any_tap_time_us = 0;
     if (last_any_tap_time_us > 0) {
         unsigned long interval = tap_time_us - last_any_tap_time_us;
-        if (interval > 10000 && interval < 4000000) {
+        if (interval > MIN_TEMPO_INTERVAL_US && interval < MAX_TEMPO_INTERVAL_US) {
             g_beat_interval_us = interval;
             g_current_bpm = 60000000.0f / g_beat_interval_us;
         }
@@ -833,7 +895,7 @@ void updateParametersFromPots() {
                 case 4: { // ★ ピッチ（ソフトテイクオーバー対応）
                     // ランダマイズ／読込直後は、物理つまみが「目標位置」に近づくまで上書きしない
                     if (g_soft_takeover_active_pitch) {
-                        const float deadband = 0.03f;
+                        const float deadband = SOFT_TAKEOVER_DEADBAND;
                         // 3% 以内ならキャッチとみなす
                         float target = g_soft_takeover_target_pitch;
                         bool pass_through = false;
@@ -890,9 +952,9 @@ void initializeSnapshots() {
         g_snapshots[i].texture_q15      = esp_random() % 32768;
         g_snapshots[i].stereoSpread_q15 = esp_random() % 32768;
         g_snapshots[i].feedback_q15     = g_feedback_lut_q15[esp_random() % FEEDBACK_LUT_SIZE];
-        // 0.0f～1.0fのランダムなfloatを生成し、-20.0f～+7.0fの範囲に変換する
+        // 0.0f～1.0fのランダムなfloatを生成し、pitch範囲に変換する
         float random_float = (float)esp_random() / (float)UINT32_MAX;
-        g_snapshots[i].pitch_f = -20.0f + (27.0f * random_float); // -20.0 から +7.0 の範囲
+        g_snapshots[i].pitch_f = PITCH_RANDOM_MIN + (PITCH_RANDOM_RANGE * random_float);
 
         g_snapshots[i].loop_length  = 2 + (esp_random() % (DEJA_VU_BUFFER_SIZE - 1));
         g_snapshots[i].mode         = (esp_random() % 2 == 0) ? MODE_GRANULAR : MODE_REVERSE;
@@ -907,13 +969,7 @@ void initializeSnapshots() {
     loadSnapshot(0);
     // ★ ピッチつまみ用ソフトテイクオーバー有効化
     // ランダムで決まった g_params.pitch_f に対応する物理つまみの正規化位置(0..1)を計算
-    float v = (g_params.pitch_f / PITCH_RANGE_SEMITONES) + 0.5f;
-    // -24..+24 → 0..1
-    if (!isfinite(v)) v = 0.5f;
-    if (v < 0.0f) v = 0.0f;
-    if (v > 1.0f) v = 1.0f;
-    g_soft_takeover_target_pitch = v;
-    g_soft_takeover_active_pitch = true;
+    enablePitchSoftTakeover(g_params.pitch_f);
 
     Serial.println("Initialization complete. Snapshot 1 loaded.");
 }
@@ -963,13 +1019,7 @@ void loadSnapshot(int slot) {
     // 安全に丸める（×1以上に限定したいなら 3,6 に）
 
     // ★ ピッチつまみ用ソフトテイクオーバー有効化
-    float v = (g_params.pitch_f / PITCH_RANGE_SEMITONES) + 0.5f;
-    // 0..1
-    if (!isfinite(v)) v = 0.5f;
-    if (v < 0.0f) v = 0.0f;
-    if (v > 1.0f) v = 1.0f;
-    g_soft_takeover_target_pitch = v;
-    g_soft_takeover_active_pitch = true;
+    enablePitchSoftTakeover(g_params.pitch_f);
 
     invalidateDisplayCache();
     Serial.printf("Snapshot %d loaded\n", slot + 1);
@@ -1115,14 +1165,17 @@ void updateAllButtons() {
 // ================================================================= //
 // SECTION: User Interface
 // ================================================================= //
-void updateDisplay() {
+
+// Display helper: Handle flash screen messages
+// Returns true if a flash screen was shown (indicating early return)
+bool updateFlashScreens() {
     if (g_randomize_flash_active) {
         tft.fillScreen(TFT_WHITE);
         tft.setTextColor(TFT_RED, TFT_WHITE);
         tft.setTextSize(4);
         tft.setCursor(50, 100);
         tft.print("RANDOM!");
-        return;
+        return true;
     }
 
     if (g_snapshot_flash_active) {
@@ -1134,6 +1187,100 @@ void updateDisplay() {
         tft.print(g_snapshot_flash_number);
         tft.setCursor(70, 120);
         tft.print("SAVED!");
+        return true;
+    }
+
+    return false;
+}
+
+// Display helper: Update Pot4 mode label highlighting
+void updatePot4ModeLabels(uint16_t txt_color, uint16_t bg_color, uint16_t highlight_color) {
+    if (g_pot4_mode == g_display_cache.pot4_mode) {
+        return;
+    }
+
+    const char* labels1[] = {"POS", "SIZ", "DEJA", "TEX", "FBK", "CLK", "LOOP"};
+    const char* labels2[] = {"PIT", "MIX", "GRNS", "SPR", "MODE", "BT", "POT4"};
+
+    // Clear old highlighted label
+    tft.setTextColor(txt_color, bg_color);
+    Pot4Mode old_mode = g_display_cache.pot4_mode;
+    switch(old_mode) {
+        case MODE_TEXTURE:
+            tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3 + 2);
+            tft.print(labels1[3]);
+            break;
+        case MODE_SPREAD:
+            tft.setCursor(UI_COL2_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3 + 2);
+            tft.print(labels2[3]);
+            break;
+        case MODE_FEEDBACK:
+            tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 4 + 2);
+            tft.print(labels1[4]);
+            break;
+        case MODE_CLK_RESOLUTION:
+            tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 5 + 2);
+            tft.print(labels1[5]);
+            break;
+        case MODE_LOOP_LENGTH:
+            tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 6 + 2);
+            tft.print(labels1[6]);
+            break;
+    }
+
+    // Highlight new label
+    tft.setTextColor(highlight_color, bg_color);
+    switch(g_pot4_mode) {
+        case MODE_TEXTURE:
+            tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3 + 2);
+            tft.print(labels1[3]);
+            break;
+        case MODE_SPREAD:
+            tft.setCursor(UI_COL2_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3 + 2);
+            tft.print(labels2[3]);
+            break;
+        case MODE_FEEDBACK:
+            tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 4 + 2);
+            tft.print(labels1[4]);
+            break;
+        case MODE_CLK_RESOLUTION:
+            tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 5 + 2);
+            tft.print(labels1[5]);
+            break;
+        case MODE_LOOP_LENGTH:
+            tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 6 + 2);
+            tft.print(labels1[6]);
+            break;
+    }
+
+    g_display_cache.pot4_mode = g_pot4_mode;
+}
+
+// Display helper: Update trigger LED animation
+void updateTriggerLED() {
+    static bool last_led_state = false;
+
+    if (g_trigger_led_on) {
+        if (!last_led_state) {
+            tft.fillCircle(UI_TRIGGER_LED_X, UI_TRIGGER_LED_Y, UI_TRIGGER_LED_RADIUS, TFT_RED);
+            last_led_state = true;
+        }
+        if (millis() - g_trigger_led_start_time > UI_TRIGGER_LED_DURATION_MS) {
+            g_trigger_led_on = false;
+        }
+    } else {
+        if (last_led_state) {
+            uint16_t led_bg_color = g_inverse_mode ? TFT_WHITE : TFT_BLACK;
+            tft.fillCircle(UI_TRIGGER_LED_X, UI_TRIGGER_LED_Y, UI_TRIGGER_LED_RADIUS, led_bg_color);
+            tft.drawCircle(UI_TRIGGER_LED_X, UI_TRIGGER_LED_Y, UI_TRIGGER_LED_RADIUS, TFT_DARKGREY);
+            last_led_state = false;
+        }
+    }
+}
+
+void updateDisplay() {
+    // Handle flash screen messages (RANDOM! / SNAPSHOT SAVED!)
+    if (updateFlashScreens()) {
         return;
     }
 
@@ -1141,60 +1288,11 @@ void updateDisplay() {
     uint16_t txt_color = g_inverse_mode ? TFT_BLACK : TFT_WHITE;
     uint16_t bg_color = g_inverse_mode ? TFT_WHITE : TFT_BLACK;
     uint16_t highlight_color = TFT_YELLOW;
-    if (g_pot4_mode != g_display_cache.pot4_mode) {
-        const char* labels1[] = {"POS", "SIZ", "DEJA", "TEX", "FBK", "CLK", "LOOP"};
-        const char* labels2[] = {"PIT", "MIX", "GRNS", "SPR", "MODE", "BT", "POT4"};
-        tft.setTextColor(txt_color, bg_color);
-        Pot4Mode old_mode = g_display_cache.pot4_mode;
-        switch(old_mode) {
-            case MODE_TEXTURE:
-                tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3 + 2);
-                tft.print(labels1[3]);
-                break;
-            case MODE_SPREAD:
-                tft.setCursor(UI_COL2_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3 + 2);
-                tft.print(labels2[3]);
-                break;
-            case MODE_FEEDBACK:
-                tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 4 + 2);
-                tft.print(labels1[4]);
-                break;
-            case MODE_CLK_RESOLUTION:
-                tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 5 + 2);
-                tft.print(labels1[5]);
-                break;
-            case MODE_LOOP_LENGTH:
-                tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 6 + 2);
-                tft.print(labels1[6]);
-                break;
-        }
 
-        tft.setTextColor(highlight_color, bg_color);
-        switch(g_pot4_mode) {
-            case MODE_TEXTURE:
-                tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3 + 2);
-                tft.print(labels1[3]);
-                break;
-            case MODE_SPREAD:
-                tft.setCursor(UI_COL2_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3 + 2);
-                tft.print(labels2[3]);
-                break;
-            case MODE_FEEDBACK:
-                tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 4 + 2);
-                tft.print(labels1[4]);
-                break;
-            case MODE_CLK_RESOLUTION:
-                tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 5 + 2);
-                tft.print(labels1[5]);
-                break;
-            case MODE_LOOP_LENGTH:
-                tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 6 + 2);
-                tft.print(labels1[6]);
-                break;
-        }
-        g_display_cache.pot4_mode = g_pot4_mode;
-    }
-     tft.setTextColor(txt_color, bg_color);
+    // Update Pot4 mode label highlighting
+    updatePot4ModeLabels(txt_color, bg_color, highlight_color);
+
+    tft.setTextColor(txt_color, bg_color);
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 0, g_params.position_q15, g_display_cache.position_q15, TFT_SKYBLUE);
     drawPitchBar(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 0, g_params.pitch_f, g_display_cache.pitch_f, TFT_AQUA);
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 1, g_params.size_q15, g_display_cache.size_q15, TFT_SKYBLUE);
@@ -1253,24 +1351,8 @@ void updateDisplay() {
         tft.setTextDatum(TL_DATUM);
     }
 
-    static bool last_led_state = false;
-    if (g_trigger_led_on) {
-        if (!last_led_state) {
-            tft.fillCircle(UI_TRIGGER_LED_X, UI_TRIGGER_LED_Y, UI_TRIGGER_LED_RADIUS, TFT_RED);
-            last_led_state = true;
-        }
-        if (millis() - g_trigger_led_start_time > UI_TRIGGER_LED_DURATION_MS) {
-            g_trigger_led_on = false;
-        }
-    } else {
-        if (last_led_state) {
-            uint16_t led_bg_color = g_inverse_mode ?
-            TFT_WHITE : TFT_BLACK;
-            tft.fillCircle(UI_TRIGGER_LED_X, UI_TRIGGER_LED_Y, UI_TRIGGER_LED_RADIUS, led_bg_color);
-            tft.drawCircle(UI_TRIGGER_LED_X, UI_TRIGGER_LED_Y, UI_TRIGGER_LED_RADIUS, TFT_DARKGREY);
-            last_led_state = false;
-        }
-    }
+    // Update trigger LED animation
+    updateTriggerLED();
 }
 
 void drawUiFrame() {
@@ -1360,44 +1442,79 @@ void drawPitchBar(int x, int y, float val, float& lastVal, uint16_t color) {
 // ================================================================= //
 // SECTION: Initialization & Helpers
 // ================================================================= //
-void initAllLuts() {
+
+// Initialize window LUT (Hann window squared for grain envelope)
+void initWindowLut() {
     for(int i=0; i<WINDOW_LUT_SIZE; i++) {
         float t = (float)i / (WINDOW_LUT_SIZE - 1);
         float w = 0.5f * (1.0f - cosf(2.0f * PI * t));
         g_window_lut_q15[i] = (int16_t)((w * w) * 32767.0f);
     }
+}
 
+// Initialize pitch LUT (exponential pitch shift values)
+void initPitchLut() {
     for(int i=0; i<PITCH_LUT_SIZE; i++) {
         float s = ((float)i / (PITCH_LUT_SIZE - 1)) * PITCH_RANGE_SEMITONES - PITCH_RANGE_SEMITONES_HALF;
         g_pitch_lut_q16[i] = (int32_t)(exp2f(s / 12.0f) * 65536.0f);
     }
+}
 
+// Initialize pan LUT (sine curve for equal-power panning)
+void initPanLut() {
     for(int i=0; i<PAN_LUT_SIZE; i++) {
         float a = ((float)i / (PAN_LUT_SIZE - 1)) * (PI * 0.5f);
         g_pan_lut_q15[i] = (int16_t)(sinf(a) * 32767.0f);
     }
+}
 
+// Initialize mix LUT (linear dry/wet mix values)
+void initMixLut() {
     for(int i=0; i<MIX_LUT_SIZE; i++) {
         g_mix_lut_q15[i] = (int16_t)((i * 32767L) / (MIX_LUT_SIZE - 1));
     }
+}
 
+// Initialize feedback LUT (scaled feedback values)
+void initFeedbackLut() {
     for(int i=0; i<FEEDBACK_LUT_SIZE; i++) {
-        float f = 0.1f + ((float)i / (FEEDBACK_LUT_SIZE - 1)) * 0.5f;
+        float f = FEEDBACK_LUT_MIN + ((float)i / (FEEDBACK_LUT_SIZE - 1)) * FEEDBACK_LUT_RANGE;
         g_feedback_lut_q15[i] = (int16_t)(f * 32767.0f);
     }
+}
 
+// Initialize reciprocal LUT (fast division for grain processing)
+void initReciprocalLut() {
     for(int i=0; i<RECIPROCAL_LUT_SIZE; i++) {
         uint16_t l = MIN_GRAIN_SIZE + ((MAX_GRAIN_SIZE - MIN_GRAIN_SIZE) * i) / (RECIPROCAL_LUT_SIZE - 1);
         g_reciprocal_lut_q32[i] = (l > 0) ? (uint32_t)(((1ULL << 32) - 1) / l) : 0;
     }
+}
 
+// Initialize random pan LUT (pre-generated random panning values)
+void initRandomPanLut() {
     for(int i=0; i<RANDOM_PAN_LUT_SIZE; i++) {
         g_random_pan_lut[i] = ((esp_random() % 20001) / 10000.0f) - 1.0f;
     }
+}
 
+// Initialize random LUT (pre-generated random values)
+void initRandomLut() {
     for(int i=0; i<RANDOM_LUT_SIZE; i++) {
         g_random_lut_q15[i] = (esp_random() % 65535) - 32767;
     }
+}
+
+// Initialize all lookup tables
+void initAllLuts() {
+    initWindowLut();
+    initPitchLut();
+    initPanLut();
+    initMixLut();
+    initFeedbackLut();
+    initReciprocalLut();
+    initRandomPanLut();
+    initRandomLut();
 }
 
 const char* getModeString(PlayMode m) {
