@@ -216,8 +216,8 @@ TFT_eSPI tft = TFT_eSPI();
 BluetoothA2DPSink a2dp_sink;
 bool g_inverse_mode = false;
 // Audio Buffers
-EXT_RAM_ATTR AudioRingBuffer g_ringBuffer;  // PSRAMに配置
-EXT_RAM_ATTR int16_t g_grainBuffer[GRAIN_BUFFER_SIZE];  // PSRAMに配置（DRAMオーバーフロー回避）
+AudioRingBuffer* g_ringBuffer = nullptr;  // PSRAMから動的割り当て
+int16_t* g_grainBuffer = nullptr;  // PSRAMから動的割り当て（DRAMオーバーフロー回避）
 volatile uint16_t g_grainWritePos = 0;
 bool g_grainBufferReady = false;
 
@@ -226,15 +226,15 @@ Grain g_grains[MAX_GRAINS];
 uint8_t g_activeGrainIndices[MAX_GRAINS];
 uint8_t g_activeGrainCount = 0;
 
-// Look-Up Tables
-EXT_RAM_ATTR int16_t g_window_lut_q15[WINDOW_LUT_SIZE];  // PSRAMに配置
-EXT_RAM_ATTR int32_t g_pitch_lut_q16[PITCH_LUT_SIZE];    // PSRAMに配置
-EXT_RAM_ATTR int16_t g_pan_lut_q15[PAN_LUT_SIZE];        // PSRAMに配置
-EXT_RAM_ATTR int16_t g_mix_lut_q15[MIX_LUT_SIZE];        // PSRAMに配置
-EXT_RAM_ATTR int16_t g_feedback_lut_q15[FEEDBACK_LUT_SIZE];  // PSRAMに配置
-EXT_RAM_ATTR uint32_t g_reciprocal_lut_q32[RECIPROCAL_LUT_SIZE];  // PSRAMに配置
-EXT_RAM_ATTR float g_random_pan_lut[RANDOM_PAN_LUT_SIZE];  // PSRAMに配置
-EXT_RAM_ATTR int16_t g_random_lut_q15[RANDOM_LUT_SIZE];   // PSRAMに配置
+// Look-Up Tables (PSRAMから動的割り当て)
+int16_t* g_window_lut_q15 = nullptr;
+int32_t* g_pitch_lut_q16 = nullptr;
+int16_t* g_pan_lut_q15 = nullptr;
+int16_t* g_mix_lut_q15 = nullptr;
+int16_t* g_feedback_lut_q15 = nullptr;
+uint32_t* g_reciprocal_lut_q32 = nullptr;
+float* g_random_pan_lut = nullptr;
+int16_t* g_random_lut_q15 = nullptr;
 uint8_t g_random_pan_index = 0;
 uint8_t g_random_index = 0;
 
@@ -254,7 +254,7 @@ unsigned long g_snapshot_flash_start = 0;
 int g_snapshot_flash_number = 0;
 
 // Deja Vu
-EXT_RAM_ATTR ParamSnapshot g_deja_vu_buffer[DEJA_VU_BUFFER_SIZE];  // PSRAMに配置
+ParamSnapshot* g_deja_vu_buffer = nullptr;  // PSRAMから動的割り当て
 int g_deja_vu_step = 0;
 
 // Trigger LED
@@ -277,7 +277,7 @@ unsigned long g_last_manual_tap_time_us = 0;
 float g_current_bpm = 120.0f;
 
 // Snapshot Storage
-EXT_RAM_ATTR FullParamSnapshot g_snapshots[4];  // PSRAMに配置
+FullParamSnapshot* g_snapshots = nullptr;  // PSRAMから動的割り当て
 bool g_snapshots_initialized[4] = {false, false, false, false};
 // ★★★ ここから2行を追加してください ★★★
 // 物理BPM LEDの状態を管理する変数
@@ -331,13 +331,37 @@ void invalidateDisplayCache();
 // ================================================================= //
 void setup() {
     Serial.begin(115200);
+
+    // PSRAMから大きなバッファを動的に割り当て（DRAMオーバーフロー回避）
+    Serial.println("Allocating buffers from PSRAM...");
+    g_ringBuffer = (AudioRingBuffer*)ps_malloc(sizeof(AudioRingBuffer));
+    g_grainBuffer = (int16_t*)ps_malloc(GRAIN_BUFFER_SIZE * sizeof(int16_t));
+    g_window_lut_q15 = (int16_t*)ps_malloc(WINDOW_LUT_SIZE * sizeof(int16_t));
+    g_pitch_lut_q16 = (int32_t*)ps_malloc(PITCH_LUT_SIZE * sizeof(int32_t));
+    g_pan_lut_q15 = (int16_t*)ps_malloc(PAN_LUT_SIZE * sizeof(int16_t));
+    g_mix_lut_q15 = (int16_t*)ps_malloc(MIX_LUT_SIZE * sizeof(int16_t));
+    g_feedback_lut_q15 = (int16_t*)ps_malloc(FEEDBACK_LUT_SIZE * sizeof(int16_t));
+    g_reciprocal_lut_q32 = (uint32_t*)ps_malloc(RECIPROCAL_LUT_SIZE * sizeof(uint32_t));
+    g_random_pan_lut = (float*)ps_malloc(RANDOM_PAN_LUT_SIZE * sizeof(float));
+    g_random_lut_q15 = (int16_t*)ps_malloc(RANDOM_LUT_SIZE * sizeof(int16_t));
+    g_deja_vu_buffer = (ParamSnapshot*)ps_malloc(DEJA_VU_BUFFER_SIZE * sizeof(ParamSnapshot));
+    g_snapshots = (FullParamSnapshot*)ps_malloc(4 * sizeof(FullParamSnapshot));
+
+    if (!g_ringBuffer || !g_grainBuffer || !g_window_lut_q15 || !g_pitch_lut_q16 ||
+        !g_pan_lut_q15 || !g_mix_lut_q15 || !g_feedback_lut_q15 || !g_reciprocal_lut_q32 ||
+        !g_random_pan_lut || !g_random_lut_q15 || !g_deja_vu_buffer || !g_snapshots) {
+        Serial.println("FATAL: PSRAM allocation failed!");
+        while(1) delay(1000);
+    }
+    Serial.println("PSRAM allocation successful!");
+
     tft.init();
     tft.setRotation(1);
     initAllLuts();
 
-    g_ringBuffer.init();
+    g_ringBuffer->init();
     for(int i = 0; i < MAX_GRAINS; i++) g_grains[i].reset();
-    memset(g_grainBuffer, 0, sizeof(g_grainBuffer));
+    memset(g_grainBuffer, 0, GRAIN_BUFFER_SIZE * sizeof(int16_t));
     // ★ 修正点: 安全なキャッシュ初期化関数を呼び出す
     invalidateDisplayCache();
     
@@ -509,7 +533,7 @@ void granularTask(void* param) {
         }
 
         int16_t inputSample;
-        if (g_ringBuffer.read(inputSample)) {
+        if (g_ringBuffer->read(inputSample)) {
             processAudioSample(inputSample);
         } else {
             vTaskDelay(1);
@@ -559,7 +583,7 @@ void processAudioSample(int16_t inputSample) {
 void a2dp_data_callback(const uint8_t *data, uint32_t length) {
     int16_t* samples = (int16_t*)data;
     for(uint32_t i=0; i<length/4; i++) {
-        g_ringBuffer.write((samples[i*2]>>1)+(samples[i*2+1]>>1));
+        g_ringBuffer->write((samples[i*2]>>1)+(samples[i*2+1]>>1));
     }
 }
 
