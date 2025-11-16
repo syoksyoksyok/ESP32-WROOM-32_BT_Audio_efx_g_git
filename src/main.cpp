@@ -70,8 +70,8 @@ constexpr float PITCH_LUT_SCALE = (float)(257 - 1) / PITCH_RANGE_SEMITONES; // P
 // SECTION: Audio Engine Constants
 // ================================================================= //
 constexpr int RING_BUFFER_SIZE = 4096;
-#define GRAIN_BUFFER_SIZE 65536  // 拡張: 約1.5秒分のバッファ (44.1kHz時)
-#define MAX_GRAIN_SIZE    65536  // 拡張: 最大グレイン長 約1.5秒
+#define GRAIN_BUFFER_SIZE 32768
+#define MAX_GRAIN_SIZE    32768
 #define GRAIN_BUFFER_MASK (GRAIN_BUFFER_SIZE - 1)
 constexpr int MAX_GRAINS = 6;
 constexpr int MIN_GRAIN_SIZE = 128;
@@ -216,8 +216,8 @@ TFT_eSPI tft = TFT_eSPI();
 BluetoothA2DPSink a2dp_sink;
 bool g_inverse_mode = false;
 // Audio Buffers
-EXTRAM_BSS_ATTR AudioRingBuffer g_ringBuffer;  // PSRAMに配置
-EXTRAM_BSS_ATTR int16_t g_grainBuffer[GRAIN_BUFFER_SIZE];  // PSRAMに配置（DRAMオーバーフロー回避）
+AudioRingBuffer g_ringBuffer;
+int16_t g_grainBuffer[GRAIN_BUFFER_SIZE];
 volatile uint16_t g_grainWritePos = 0;
 bool g_grainBufferReady = false;
 
@@ -227,14 +227,14 @@ uint8_t g_activeGrainIndices[MAX_GRAINS];
 uint8_t g_activeGrainCount = 0;
 
 // Look-Up Tables
-EXTRAM_BSS_ATTR int16_t g_window_lut_q15[WINDOW_LUT_SIZE];  // PSRAMに配置
-EXTRAM_BSS_ATTR int32_t g_pitch_lut_q16[PITCH_LUT_SIZE];    // PSRAMに配置
-EXTRAM_BSS_ATTR int16_t g_pan_lut_q15[PAN_LUT_SIZE];        // PSRAMに配置
-EXTRAM_BSS_ATTR int16_t g_mix_lut_q15[MIX_LUT_SIZE];        // PSRAMに配置
-EXTRAM_BSS_ATTR int16_t g_feedback_lut_q15[FEEDBACK_LUT_SIZE];  // PSRAMに配置
-EXTRAM_BSS_ATTR uint32_t g_reciprocal_lut_q32[RECIPROCAL_LUT_SIZE];  // PSRAMに配置
-EXTRAM_BSS_ATTR float g_random_pan_lut[RANDOM_PAN_LUT_SIZE];  // PSRAMに配置
-EXTRAM_BSS_ATTR int16_t g_random_lut_q15[RANDOM_LUT_SIZE];   // PSRAMに配置
+int16_t g_window_lut_q15[WINDOW_LUT_SIZE];
+int32_t g_pitch_lut_q16[PITCH_LUT_SIZE];
+int16_t g_pan_lut_q15[PAN_LUT_SIZE];
+int16_t g_mix_lut_q15[MIX_LUT_SIZE];
+int16_t g_feedback_lut_q15[FEEDBACK_LUT_SIZE];
+uint32_t g_reciprocal_lut_q32[RECIPROCAL_LUT_SIZE];
+float g_random_pan_lut[RANDOM_PAN_LUT_SIZE];
+int16_t g_random_lut_q15[RANDOM_LUT_SIZE];
 uint8_t g_random_pan_index = 0;
 uint8_t g_random_index = 0;
 
@@ -254,7 +254,7 @@ unsigned long g_snapshot_flash_start = 0;
 int g_snapshot_flash_number = 0;
 
 // Deja Vu
-EXTRAM_BSS_ATTR ParamSnapshot g_deja_vu_buffer[DEJA_VU_BUFFER_SIZE];  // PSRAMに配置
+ParamSnapshot g_deja_vu_buffer[DEJA_VU_BUFFER_SIZE];
 int g_deja_vu_step = 0;
 
 // Trigger LED
@@ -277,7 +277,7 @@ unsigned long g_last_manual_tap_time_us = 0;
 float g_current_bpm = 120.0f;
 
 // Snapshot Storage
-EXTRAM_BSS_ATTR FullParamSnapshot g_snapshots[4];  // PSRAMに配置
+FullParamSnapshot g_snapshots[4];
 bool g_snapshots_initialized[4] = {false, false, false, false};
 // ★★★ ここから2行を追加してください ★★★
 // 物理BPM LEDの状態を管理する変数
