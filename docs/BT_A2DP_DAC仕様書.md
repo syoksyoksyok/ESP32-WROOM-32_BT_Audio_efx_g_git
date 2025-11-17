@@ -291,18 +291,25 @@ Core 1 (APP_CPU):
 |------|----------------|------------------------|
 | CPU | Xtensa LX6 デュアルコア 240MHz | ARM Cortex-M33 デュアルコア 150MHz |
 | RAM | 520 KB SRAM | 520 KB SRAM |
-| Bluetooth | 内蔵 (Classic + BLE) | **外付けモジュール必要** |
+| Bluetooth | 内蔵 (Classic + BLE) | **CYW43439内蔵 (Classic + BLE)** |
 | I2S | ハードウェアI2S | **PIOでエミュレート必要** |
 | OS | FreeRTOS | SDK標準、またはFreeRTOS |
 
 ### 6.2 Raspberry Pi Pico 2 Wでの課題
 
 #### 6.2.1 Bluetooth接続
-- **問題**: Pico 2 WはWi-Fi (CYW43439) 内蔵だが、Bluetooth Classicは非対応
+- **状況**: Pico 2 WはCYW43439チップを搭載しており、Bluetooth Classic (5.2) に対応
+- **課題**: Pico SDKでのBluetooth Classicサポートは限定的 (主にBLE向け)
 - **解決策**:
-  1. 外付けBluetoothモジュール (例: HC-05, RN52) を使用
-  2. または ESP32をBluetoothブリッジとして使用
-  3. BlueKitchen BTstackライブラリでA2DP実装を試す (難易度高)
+  1. **BTstack ライブラリを使用** (推奨)
+     - BlueKitchen BTstackはCYW43439のBluetooth Classic/BLEに対応
+     - A2DP Sinkプロファイルの実装例あり
+     - pico-sdkとの統合サンプルあり
+     - 参考: https://github.com/bluekitchen/btstack
+  2. **外付けBluetoothモジュール使用** (簡易的)
+     - 例: RN52 (A2DP専用モジュール)
+     - UARTまたはI2Sで接続
+  3. **ESP32をBluetoothブリッジとして使用** (確実だが複雑)
 
 #### 6.2.2 I2S出力
 - **問題**: Pico 2 WにはハードウェアI2Sペリフェラルがない
@@ -319,26 +326,35 @@ Core 1 (APP_CPU):
 
 ### 6.3 推奨実装パス
 
-#### パス1: ESP32をBluetoothレシーバーとして使用
+#### パス1: BTstackでPico単体実装 (推奨)
+```
+[スマホ] → BT A2DP → [Pico 2 W (BTstack + PIO I2S)] → [DAC]
+```
+- **メリット**: 最小構成、ハードウェアはPico 2 W + DAC のみ
+- **デメリット**: 実装難易度がやや高い
+- **実装ステップ**:
+  1. BTstackをpico-sdkに統合
+  2. A2DP Sinkプロファイルのサンプルコードをベースに実装
+  3. PIOでI2S出力を実装 (pico-extras参考)
+  4. 受信したPCMデータをI2S DACに出力
+- **参考資料**:
+  - BTstack Pico examples: https://github.com/bluekitchen/btstack/tree/master/port/raspberry-pi-pico
+  - A2DP Sink example: https://github.com/bluekitchen/btstack/blob/master/example/a2dp_sink_demo.c
+
+#### パス2: 外付けBluetoothモジュール使用 (簡易)
+```
+[スマホ] → BT A2DP → [RN52モジュール] → I2S → [Pico 2 W] → 処理 → I2S → [DAC]
+```
+- **メリット**: Bluetooth実装が不要、動作確実
+- **デメリット**: 追加ハードウェア必要、モジュール制約あり
+- **推奨モジュール**: RN52 (A2DP専用、I2S出力対応)
+
+#### パス3: ESP32をBluetoothレシーバーとして使用
 ```
 [スマホ] → BT A2DP → [ESP32] → I2S → [Pico 2 W] → 処理 → I2S → [DAC]
 ```
-- メリット: A2DP受信が確実に動作
-- デメリット: 2つのマイコンが必要
-
-#### パス2: 外付けBluetoothモジュール使用
-```
-[スマホ] → BT A2DP → [HC-05/RN52] → I2S → [Pico 2 W] → I2S → [DAC]
-```
-- メリット: シンプルな構成
-- デメリット: モジュールの制約あり
-
-#### パス3: Pico単体でBT + I2S実装 (上級者向け)
-```
-[スマホ] → BT A2DP → [Pico 2 W (BTstack + PIO I2S)] → I2S → [DAC]
-```
-- メリット: 最小構成
-- デメリット: 実装難易度が非常に高い
+- **メリット**: A2DP受信が確実に動作 (本プロジェクトと同じ)
+- **デメリット**: 2つのマイコンが必要、コスト増
 
 ---
 
@@ -451,6 +467,9 @@ PCM5102A AGND → オーディオグランド
 ### 9.4 Raspberry Pi Pico
 - Pico SDK: https://github.com/raspberrypi/pico-sdk
 - Pico PIO I2S: https://github.com/raspberrypi/pico-extras/tree/master/src/rp2_common/pico_audio_i2s
+- BTstack (Bluetooth Stack): https://github.com/bluekitchen/btstack
+- BTstack Pico Port: https://github.com/bluekitchen/btstack/tree/master/port/raspberry-pi-pico
+- BTstack A2DP Sink Example: https://github.com/bluekitchen/btstack/blob/master/example/a2dp_sink_demo.c
 
 ---
 
@@ -463,14 +482,25 @@ PCM5102A AGND → オーディオグランド
 - デュアルコアでリアルタイム処理可能
 
 ### 10.2 Raspberry Pi Pico 2 Wでの実装
-⚠️ **課題あり**
-- Bluetooth A2DP: 外付けモジュールまたはBTstack実装が必要
-- I2S出力: PIOでエミュレートする必要あり (実装例あり)
+✅ **実装可能** (CYW43439がBluetooth Classic対応)
+- **Bluetooth A2DP**: BTstackライブラリで実装可能 (サンプルコードあり)
+- **I2S出力**: PIOでエミュレート (pico-extrasに実装例あり)
+- **総合難易度**: ESP32より高いが、十分実現可能
 
 ### 10.3 推奨アプローチ (Pico 2 W向け)
+
+#### 初心者向け:
 1. **まずPIOでI2S出力のみテスト** (WAVファイル再生など)
-2. **Bluetoothは外付けモジュール (RN52等) を検討**
-3. **またはESP32とPicoのハイブリッド構成を検討**
+2. **外付けBluetoothモジュール (RN52) で動作確認**
+3. **動作確認後、BTstackへ移行を検討**
+
+#### 中級者以上向け:
+1. **BTstack + PIO I2Sで単体実装にチャレンジ**
+2. **BTstackのA2DP Sinkサンプルをベースに開発**
+3. **pico-extrasのI2Sサンプルと統合**
+
+#### 確実に動作させたい場合:
+- **ESP32との2段構成** (本プロジェクトのESP32コードをそのまま活用)
 
 ---
 
