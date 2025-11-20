@@ -127,12 +127,18 @@ constexpr unsigned long UI_TRIGGER_LED_DURATION_MS = 50;
 constexpr int VIZ_AREA_Y_START = 95;   // BPM/Grain display: below parameter area
 constexpr int VIZ_INFO_HEIGHT = 15;
 constexpr int VIZ_SEPARATOR_LINE_Y = 112;  // Separator line directly below BPM display
-constexpr int VIZ_PARTICLE_Y_START = 115;  // Particle area: expanded upward (was 145)
-constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 28;  // Height: 97px (was 67px)
-constexpr int VIZ_BUFFER_BAR_AREA_Y = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT + 2;  // y=214
-constexpr int VIZ_BUFFER_BAR_HEIGHT = 6;  // Half height (was 12)
-constexpr int VIZ_BUFFER_BAR_WIDTH = 320;  // Full width (restored)
-constexpr int VIZ_BUFFER_BAR_X_OFFSET = 0;  // Left aligned
+constexpr int VIZ_PITCH_LABEL_Y = 113;     // Pitch label area (new horizontal layout)
+constexpr int VIZ_PITCH_LABEL_HEIGHT = 10; // Height for pitch labels
+constexpr int VIZ_PARTICLE_Y_START = 123;  // Particle area start (below pitch labels)
+constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START;  // Height: 117px
+// Vertical buffer bars on left and right edges
+constexpr int VIZ_BUFFER_BAR_V_WIDTH = 8;   // Vertical bar width (thin)
+constexpr int VIZ_BUFFER_BAR_V_LEFT_X = 0;  // Left bar position
+constexpr int VIZ_BUFFER_BAR_V_RIGHT_X = 320 - VIZ_BUFFER_BAR_V_WIDTH;  // Right bar position (312)
+// Particle area X range (between vertical buffer bars)
+constexpr int VIZ_PARTICLE_X_MIN = VIZ_BUFFER_BAR_V_WIDTH;     // 8
+constexpr int VIZ_PARTICLE_X_MAX = VIZ_BUFFER_BAR_V_RIGHT_X;   // 312
+constexpr int VIZ_PARTICLE_X_RANGE = VIZ_PARTICLE_X_MAX - VIZ_PARTICLE_X_MIN;  // 304
 constexpr int VIZ_PARTICLE_MAX_SIZE = 20;  // 2.5x larger (was 8)
 constexpr int VIZ_PARTICLE_MIN_SIZE = 5;   // 2.5x larger (was 2)
 // ================================================================= //
@@ -1547,43 +1553,36 @@ void drawParticleVisualizer() {
         last_grain_count = g_activeGrainCount;
     }
 
-    // Calculate pitch scale positions (used for initial draw and particle positioning)
-    int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
-    int y_top = VIZ_PARTICLE_Y_START;
-    int y_bottom = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1;
-
     // Initialize particle area once (first frame only)
     static bool particle_area_initialized = false;
     if (!particle_area_initialized) {
-        // Clear entire particle area initially
+        // Clear pitch label and particle area initially
         int clear_y_start = VIZ_SEPARATOR_LINE_Y + 1;
-        int clear_height = VIZ_BUFFER_BAR_AREA_Y - clear_y_start - 1;
+        int clear_height = 240 - clear_y_start;
         tft.fillRect(0, clear_y_start, 320, clear_height, TFT_BLACK);
 
-        // Draw center reference line (pitch = 0) as dashed line
-        for (int x = 0; x < 320; x += 8) {
-            tft.drawLine(x, y_center, x + 4, y_center, TFT_LIGHTGREY);
-        }
-
-        // Draw pitch scale labels (only once)
+        // Draw horizontal pitch labels at top (new layout: X-axis = pitch)
         tft.setTextSize(1);
         tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
-        // Left side labels
-        tft.setCursor(2, y_top);
-        tft.print("+24");
-        tft.setCursor(2, y_center - 4);
-        tft.print(" 0");
-        tft.setCursor(2, y_bottom - 8);
+        // Left label: -24
+        tft.setCursor(VIZ_PARTICLE_X_MIN, VIZ_PITCH_LABEL_Y);
         tft.print("-24");
 
-        // Right side labels
-        tft.setCursor(302, y_top);
+        // Center label: 0
+        int center_x = VIZ_PARTICLE_X_MIN + (VIZ_PARTICLE_X_RANGE / 2) - 6;  // -6 to center text
+        tft.setCursor(center_x, VIZ_PITCH_LABEL_Y);
+        tft.print("0");
+
+        // Right label: +24
+        tft.setCursor(VIZ_PARTICLE_X_MAX - 18, VIZ_PITCH_LABEL_Y);  // -18 for text width
         tft.print("+24");
-        tft.setCursor(302, y_center - 4);
-        tft.print(" 0");
-        tft.setCursor(302, y_bottom - 8);
-        tft.print("-24");
+
+        // Draw center reference line (pitch = 0) as dashed vertical line
+        int center_pitch_x = VIZ_PARTICLE_X_MIN + (VIZ_PARTICLE_X_RANGE / 2);
+        for (int y = VIZ_PARTICLE_Y_START; y < VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT; y += 8) {
+            tft.drawFastVLine(center_pitch_x, y, 4, TFT_DARKGREY);
+        }
 
         particle_area_initialized = true;
     }
@@ -1604,84 +1603,87 @@ void drawParticleVisualizer() {
         }
     }
 
-    // Draw buffer progress bar at bottom (solid bar style)
-    constexpr int BAR_X = 2;
-    constexpr int BAR_WIDTH = 316;  // 320 - 4 for margins
-    int bar_y = VIZ_BUFFER_BAR_AREA_Y + 8;
+    // Draw vertical buffer progress bars on left and right edges
+    int bar_bottom = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1;
 
-    // Initialize buffer bar area once
+    // Initialize vertical buffer bars once
     if (!buffer_bar_initialized) {
-        // Clear buffer bar area with black background
-        tft.fillRect(0, VIZ_BUFFER_BAR_AREA_Y, 320, 48, TFT_BLACK);
+        // Draw empty bar backgrounds (dark gray) for both left and right
+        tft.fillRect(VIZ_BUFFER_BAR_V_LEFT_X, VIZ_PARTICLE_Y_START,
+                     VIZ_BUFFER_BAR_V_WIDTH, VIZ_PARTICLE_HEIGHT, TFT_DARKGREY);
+        tft.fillRect(VIZ_BUFFER_BAR_V_RIGHT_X, VIZ_PARTICLE_Y_START,
+                     VIZ_BUFFER_BAR_V_WIDTH, VIZ_PARTICLE_HEIGHT, TFT_DARKGREY);
 
-        // Draw scale markers (0%, 25%, 50%, 75%, 100%) - white text on black
-        tft.setTextSize(1);
-        tft.setTextColor(TFT_WHITE, TFT_BLACK);
-        tft.setCursor(0, VIZ_BUFFER_BAR_AREA_Y);
-        tft.print("0");
-        tft.setCursor(75, VIZ_BUFFER_BAR_AREA_Y);
-        tft.print("25");
-        tft.setCursor(155, VIZ_BUFFER_BAR_AREA_Y);
-        tft.print("50");
-        tft.setCursor(235, VIZ_BUFFER_BAR_AREA_Y);
-        tft.print("75");
-        tft.setCursor(302, VIZ_BUFFER_BAR_AREA_Y);
-        tft.print("100%");
-
-        // Draw empty bar background (dark gray)
-        tft.fillRect(BAR_X, bar_y, BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_DARKGREY);
-
-        // Draw border around bar
-        tft.drawRect(BAR_X, bar_y, BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_WHITE);
-
-        // Draw tick marks at 25% intervals
-        for (int i = 0; i <= 4; i++) {
-            int tick_x = BAR_X + (i * BAR_WIDTH) / 4;
-            tft.drawFastVLine(tick_x, bar_y - 2, 2, TFT_WHITE);
-        }
-
-        // Draw buffer info text (32768 samples / ~0.74s) - white text on black background
-        tft.setTextColor(TFT_WHITE, TFT_BLACK);
-        tft.setCursor(70, VIZ_BUFFER_BAR_AREA_Y + VIZ_BUFFER_BAR_HEIGHT + 11);
-        tft.print("Buf:32768smp/743ms");
+        // Draw borders around bars
+        tft.drawRect(VIZ_BUFFER_BAR_V_LEFT_X, VIZ_PARTICLE_Y_START,
+                     VIZ_BUFFER_BAR_V_WIDTH, VIZ_PARTICLE_HEIGHT, TFT_WHITE);
+        tft.drawRect(VIZ_BUFFER_BAR_V_RIGHT_X, VIZ_PARTICLE_Y_START,
+                     VIZ_BUFFER_BAR_V_WIDTH, VIZ_PARTICLE_HEIGHT, TFT_WHITE);
 
         buffer_bar_initialized = true;
     }
 
-    // Update bar fill and position marker
+    // Update vertical bar fill and position marker
     if (last_write_pos != g_grainWritePos) {
-        static int last_filled_width = 0;
-        static int last_marker_x = 0;
+        static int last_filled_height = 0;
+        static int last_marker_y = 0;
 
-        // Calculate filled width
-        int filled_width = (g_grainWritePos * BAR_WIDTH) / GRAIN_BUFFER_SIZE;
+        // Calculate filled height (bottom to top)
+        int filled_height = (g_grainWritePos * VIZ_PARTICLE_HEIGHT) / GRAIN_BUFFER_SIZE;
 
         // Update bar fill if changed
-        if (filled_width != last_filled_width) {
-            if (filled_width > last_filled_width) {
-                // Fill new area with white
-                tft.fillRect(BAR_X + last_filled_width, bar_y, filled_width - last_filled_width, VIZ_BUFFER_BAR_HEIGHT, TFT_WHITE);
+        if (filled_height != last_filled_height) {
+            if (filled_height > last_filled_height) {
+                // Fill new area with white (growing upward from bottom)
+                int fill_y = bar_bottom - filled_height + 1;
+                int fill_height = filled_height - last_filled_height;
+                // Left bar
+                tft.fillRect(VIZ_BUFFER_BAR_V_LEFT_X + 1, fill_y,
+                             VIZ_BUFFER_BAR_V_WIDTH - 2, fill_height, TFT_WHITE);
+                // Right bar
+                tft.fillRect(VIZ_BUFFER_BAR_V_RIGHT_X + 1, fill_y,
+                             VIZ_BUFFER_BAR_V_WIDTH - 2, fill_height, TFT_WHITE);
             } else {
                 // Clear area (back to dark gray)
-                tft.fillRect(BAR_X + filled_width, bar_y, last_filled_width - filled_width, VIZ_BUFFER_BAR_HEIGHT, TFT_DARKGREY);
+                int clear_y = bar_bottom - last_filled_height + 1;
+                int clear_height = last_filled_height - filled_height;
+                // Left bar
+                tft.fillRect(VIZ_BUFFER_BAR_V_LEFT_X + 1, clear_y,
+                             VIZ_BUFFER_BAR_V_WIDTH - 2, clear_height, TFT_DARKGREY);
+                // Right bar
+                tft.fillRect(VIZ_BUFFER_BAR_V_RIGHT_X + 1, clear_y,
+                             VIZ_BUFFER_BAR_V_WIDTH - 2, clear_height, TFT_DARKGREY);
             }
-            last_filled_width = filled_width;
+            last_filled_height = filled_height;
 
-            // Redraw border to ensure it's not overwritten
-            tft.drawRect(BAR_X, bar_y, BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_WHITE);
+            // Redraw borders to ensure they're not overwritten
+            tft.drawRect(VIZ_BUFFER_BAR_V_LEFT_X, VIZ_PARTICLE_Y_START,
+                         VIZ_BUFFER_BAR_V_WIDTH, VIZ_PARTICLE_HEIGHT, TFT_WHITE);
+            tft.drawRect(VIZ_BUFFER_BAR_V_RIGHT_X, VIZ_PARTICLE_Y_START,
+                         VIZ_BUFFER_BAR_V_WIDTH, VIZ_PARTICLE_HEIGHT, TFT_WHITE);
         }
 
         // Clear old position marker (restore bar color underneath)
-        if (last_marker_x > 0) {
-            uint16_t restore_color = (last_marker_x <= last_filled_width) ? TFT_WHITE : TFT_DARKGREY;
-            tft.drawFastVLine(last_marker_x, bar_y, VIZ_BUFFER_BAR_HEIGHT, restore_color);
+        if (last_marker_y > 0) {
+            uint16_t restore_color = (last_marker_y >= bar_bottom - last_filled_height) ? TFT_WHITE : TFT_DARKGREY;
+            // Left bar marker
+            tft.drawFastHLine(VIZ_BUFFER_BAR_V_LEFT_X + 1, last_marker_y,
+                              VIZ_BUFFER_BAR_V_WIDTH - 2, restore_color);
+            // Right bar marker
+            tft.drawFastHLine(VIZ_BUFFER_BAR_V_RIGHT_X + 1, last_marker_y,
+                              VIZ_BUFFER_BAR_V_WIDTH - 2, restore_color);
         }
 
         // Draw new position marker (red line)
-        int x_pos = BAR_X + filled_width;
-        tft.drawFastVLine(x_pos, bar_y, VIZ_BUFFER_BAR_HEIGHT, TFT_RED);
+        int y_pos = bar_bottom - filled_height;
+        // Left bar marker
+        tft.drawFastHLine(VIZ_BUFFER_BAR_V_LEFT_X + 1, y_pos,
+                          VIZ_BUFFER_BAR_V_WIDTH - 2, TFT_RED);
+        // Right bar marker
+        tft.drawFastHLine(VIZ_BUFFER_BAR_V_RIGHT_X + 1, y_pos,
+                          VIZ_BUFFER_BAR_V_WIDTH - 2, TFT_RED);
 
-        last_marker_x = x_pos;
+        last_marker_y = y_pos;
         last_write_pos = g_grainWritePos;
     }
 
@@ -1692,15 +1694,8 @@ void drawParticleVisualizer() {
 
         if (!grain.active) continue;
 
-        // Calculate X position (buffer position: 20-300 to avoid scale labels)
+        // Calculate particle size and progress
         uint16_t current_pos = grain.position_q16 >> 16;
-        uint16_t buffer_pos = (grain.startPos + current_pos) & GRAIN_BUFFER_MASK;
-        constexpr int VIZ_PARTICLE_X_MIN = 20;
-        constexpr int VIZ_PARTICLE_X_MAX = 300;
-        constexpr int VIZ_PARTICLE_X_RANGE = VIZ_PARTICLE_X_MAX - VIZ_PARTICLE_X_MIN;
-        int x = VIZ_PARTICLE_X_MIN + (buffer_pos * VIZ_PARTICLE_X_RANGE) / GRAIN_BUFFER_SIZE;
-
-        // Calculate particle size (envelope progress) - calculate first
         float progress = (float)current_pos / grain.length;
         // Use Hann window for size (larger in middle, smaller at edges)
         float envelope = 0.5f * (1.0f - cosf(2.0f * PI * progress));
@@ -1708,17 +1703,31 @@ void drawParticleVisualizer() {
         size = constrain(size, VIZ_PARTICLE_MIN_SIZE, VIZ_PARTICLE_MAX_SIZE);
         int particle_radius = size / 2;
 
-        // Calculate Y position (pitch: -24 to +24 semitones mapped to Y axis)
-        // Add margin to align particles with label centers (text is 8px tall, center offset is 4px)
-        // pitch_f = +24 -> near top (y=119, aligns with +24 label center)
-        // pitch_f = 0   -> center (y=163, aligns with 0 label center)
-        // pitch_f = -24 -> near bottom (y=207, aligns with -24 label center)
-        constexpr int LABEL_MARGIN = 4;  // Margin to align with label centers
-        int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
-        int effective_half_range = (VIZ_PARTICLE_HEIGHT / 2) - LABEL_MARGIN;  // 48 - 4 = 44
-        int y = y_center - (int)((grain.pitch_f / 24.0f) * effective_half_range);
+        // Calculate X position based on pitch (NEW: X-axis = pitch)
+        // pitch_f: -24 to +24 semitones mapped to X axis
+        // pitch_f = -24 -> left edge (x = VIZ_PARTICLE_X_MIN)
+        // pitch_f = 0   -> center
+        // pitch_f = +24 -> right edge (x = VIZ_PARTICLE_X_MAX)
+        int x_center = VIZ_PARTICLE_X_MIN + (VIZ_PARTICLE_X_RANGE / 2);
+        int x = x_center + (int)((grain.pitch_f / 24.0f) * (VIZ_PARTICLE_X_RANGE / 2));
         // Keep particle within bounds
-        y = constrain(y, VIZ_PARTICLE_Y_START, VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1);
+        x = constrain(x, VIZ_PARTICLE_X_MIN, VIZ_PARTICLE_X_MAX - 1);
+
+        // Calculate Y position based on grain progress (NEW: Y-axis = progress)
+        // Normal playback (speed > 0): bottom to top (progress 0 -> 1 = bottom -> top)
+        // Reverse playback (speed < 0): top to bottom (progress 0 -> 1 = top -> bottom)
+        int y_bottom = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1;
+        int y_top = VIZ_PARTICLE_Y_START;
+        int y;
+        if (grain.speed_q16 >= 0) {
+            // Normal: bottom to top
+            y = y_bottom - (int)(progress * VIZ_PARTICLE_HEIGHT);
+        } else {
+            // Reverse: top to bottom
+            y = y_top + (int)(progress * VIZ_PARTICLE_HEIGHT);
+        }
+        // Keep particle within bounds
+        y = constrain(y, y_top, y_bottom);
 
         // Calculate color based on grain index (24 distinct colors)
         // Each grain gets its own color for easy identification
