@@ -1511,7 +1511,10 @@ void drawParticleVisualizer() {
         tft.setTextColor(TFT_WHITE, TFT_BLACK);
         tft.setTextSize(1);
         tft.setCursor(5, VIZ_AREA_Y_START + 2);
-        tft.printf("%.1fBPM", g_current_bpm);
+        // Use sprintf + print to ensure background color is respected
+        char bpm_text[16];
+        snprintf(bpm_text, sizeof(bpm_text), "%.1fBPM", g_current_bpm);
+        tft.print(bpm_text);
         last_bpm = g_current_bpm;
     }
 
@@ -1522,7 +1525,10 @@ void drawParticleVisualizer() {
         tft.setTextColor(TFT_WHITE, TFT_BLACK);
         tft.setTextSize(1);
         tft.setCursor(240, VIZ_AREA_Y_START + 2);
-        tft.printf("%d/%dgrn", g_activeGrainCount, MAX_GRAINS);
+        // Use sprintf + print to ensure background color is respected
+        char grain_text[16];
+        snprintf(grain_text, sizeof(grain_text), "%d/%dgrn", g_activeGrainCount, MAX_GRAINS);
+        tft.print(grain_text);
         last_grain_count = g_activeGrainCount;
     }
 
