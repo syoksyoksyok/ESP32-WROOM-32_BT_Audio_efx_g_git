@@ -95,10 +95,10 @@ constexpr int16_t PAN_CENTER_Q15 = 23170;  // ~0.707 in Q15 format for center pa
 // SECTION: Audio Engine Constants
 // ================================================================= //
 constexpr int RING_BUFFER_SIZE = 4096;
-#define GRAIN_BUFFER_SIZE 32768   // 64KB (WROOM-32 has no PSRAM, 12 grains limit)
+#define GRAIN_BUFFER_SIZE 32768   // 64KB (WROOM-32 has no PSRAM)
 #define MAX_GRAIN_SIZE    32768   // Max ~0.74 seconds (44.1kHz stereo)
 #define GRAIN_BUFFER_MASK (GRAIN_BUFFER_SIZE - 1)
-constexpr int MAX_GRAINS = 12;  // Reduced for longer grain length
+constexpr int MAX_GRAINS = 32;  // Increased for maximum polyphony
 constexpr int MIN_GRAIN_SIZE = 512;  // Min ~11.6ms (was 128)
 constexpr int FEEDBACK_BUFFER_SIZE = 512;
 constexpr int I2S_BUFFER_SAMPLES = 128;
@@ -1709,21 +1709,13 @@ void drawParticleVisualizer() {
         // Keep particle within bounds
         y = constrain(y, VIZ_PARTICLE_Y_START, VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1);
 
-        // Calculate color based on grain index (12 distinct colors)
+        // Calculate color based on grain index (32 distinct colors)
         // Each grain gets its own color for easy identification
         static const uint16_t grain_colors[MAX_GRAINS] = {
-            TFT_RED,      // Grain 0: Red
-            TFT_GREEN,    // Grain 1: Green
-            TFT_BLUE,     // Grain 2: Blue
-            TFT_YELLOW,   // Grain 3: Yellow
-            TFT_CYAN,     // Grain 4: Cyan
-            TFT_MAGENTA,  // Grain 5: Magenta
-            TFT_ORANGE,   // Grain 6: Orange
-            0x8010,       // Grain 7: Purple (RGB565: 128,0,128)
-            0xFC18,       // Grain 8: Pink (RGB565: 255,128,192)
-            TFT_WHITE,    // Grain 9: White
-            0x5D9B,       // Grain 10: Light Blue (RGB565: 90,180,220)
-            0x87E0        // Grain 11: Lime (RGB565: 135,255,0)
+            TFT_RED, TFT_GREEN, TFT_BLUE, TFT_YELLOW, TFT_CYAN, TFT_MAGENTA, TFT_ORANGE, 0x8010,
+            0xFC18, TFT_WHITE, 0x5D9B, 0x87E0, 0xFEA0, TFT_SKYBLUE, 0xFBEA, 0xE71C,
+            0xF800, 0x07E0, 0x001F, 0xFFE0, 0x07FF, 0xF81F, 0xFD20, 0x8410,
+            0xFCE0, 0xA514, 0x5AEB, 0xBDF7, 0x867D, 0xFAAF, 0x9E66, 0xC618
         };
 
         uint16_t base_color = grain_colors[grain_idx];
