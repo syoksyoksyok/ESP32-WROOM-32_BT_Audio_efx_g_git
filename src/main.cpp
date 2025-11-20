@@ -1490,6 +1490,40 @@ void drawParticleVisualizer() {
     // Clear particle area every frame for smooth animation (white background)
     tft.fillRect(0, VIZ_PARTICLE_Y_START, 320, VIZ_PARTICLE_HEIGHT, TFT_WHITE);
 
+    // Draw pitch scale on particle area
+    int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
+    int y_top = VIZ_PARTICLE_Y_START;
+    int y_bottom = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1;
+
+    // Draw boundary lines (gray)
+    tft.drawLine(0, y_top, 320, y_top, TFT_DARKGREY);
+    tft.drawLine(0, y_bottom, 320, y_bottom, TFT_DARKGREY);
+
+    // Draw center reference line (pitch = 0) as dashed line
+    for (int x = 0; x < 320; x += 8) {
+        tft.drawLine(x, y_center, x + 4, y_center, TFT_LIGHTGREY);
+    }
+
+    // Draw pitch scale labels
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_BLACK, TFT_WHITE);
+
+    // Left side labels
+    tft.setCursor(2, y_top);
+    tft.print("+24");
+    tft.setCursor(2, y_center - 4);
+    tft.print(" 0");
+    tft.setCursor(2, y_bottom - 8);
+    tft.print("-24");
+
+    // Right side labels
+    tft.setCursor(302, y_top);
+    tft.print("+24");
+    tft.setCursor(302, y_center - 4);
+    tft.print(" 0");
+    tft.setCursor(302, y_bottom - 8);
+    tft.print("-24");
+
     // Draw enhanced buffer progress bar at bottom
     if (!buffer_bar_initialized || last_write_pos != g_grainWritePos) {
         // Clear buffer bar area with white background
@@ -1590,10 +1624,13 @@ void drawParticleVisualizer() {
 
         if (!grain.active) continue;
 
-        // Calculate X position (buffer position: 0-320)
+        // Calculate X position (buffer position: 20-300 to avoid scale labels)
         uint16_t current_pos = grain.position_q16 >> 16;
         uint16_t buffer_pos = (grain.startPos + current_pos) & GRAIN_BUFFER_MASK;
-        int x = (buffer_pos * 320) / GRAIN_BUFFER_SIZE;
+        constexpr int VIZ_PARTICLE_X_MIN = 20;
+        constexpr int VIZ_PARTICLE_X_MAX = 300;
+        constexpr int VIZ_PARTICLE_X_RANGE = VIZ_PARTICLE_X_MAX - VIZ_PARTICLE_X_MIN;
+        int x = VIZ_PARTICLE_X_MIN + (buffer_pos * VIZ_PARTICLE_X_RANGE) / GRAIN_BUFFER_SIZE;
 
         // Calculate particle size (envelope progress) - calculate first
         float progress = (float)current_pos / grain.length;
