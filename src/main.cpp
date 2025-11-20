@@ -1546,6 +1546,14 @@ void drawParticleVisualizer() {
         particle_area_initialized = true;
     }
 
+    // Trail effect: store previous particle positions
+    struct ParticleTrail {
+        int x, y, radius;
+        uint16_t color;
+        bool valid;
+    };
+    static ParticleTrail trails[MAX_GRAINS] = {};
+
     // Clear previous particle positions only (using trail data)
     for (uint8_t i = 0; i < MAX_GRAINS; i++) {
         if (trails[i].valid) {
@@ -1617,34 +1625,6 @@ void drawParticleVisualizer() {
 
         last_write_pos = g_grainWritePos;
         buffer_bar_initialized = true;
-    }
-
-    // Trail effect: store previous particle positions
-    struct ParticleTrail {
-        int x, y, radius;
-        uint16_t color;
-        bool valid;
-    };
-    static ParticleTrail trails[MAX_GRAINS] = {};
-
-    // Draw trails (previous frame particles with lighter color)
-    for (uint8_t i = 0; i < MAX_GRAINS; i++) {
-        if (trails[i].valid) {
-            // Make trail color lighter (blend with white)
-            uint16_t trail_color = trails[i].color;
-            // Extract RGB components from RGB565
-            uint8_t r = ((trail_color >> 11) & 0x1F) * 8;
-            uint8_t g = ((trail_color >> 5) & 0x3F) * 4;
-            uint8_t b = (trail_color & 0x1F) * 8;
-            // Blend 60% with white
-            r = r + (255 - r) * 0.6;
-            g = g + (255 - g) * 0.6;
-            b = b + (255 - b) * 0.6;
-            // Convert back to RGB565
-            uint16_t light_color = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
-
-            tft.fillCircle(trails[i].x, trails[i].y, trails[i].radius, light_color);
-        }
     }
 
     // Draw current particles and update trails
