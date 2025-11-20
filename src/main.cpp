@@ -254,7 +254,7 @@ BluetoothA2DPSink a2dp_sink;
 bool g_inverse_mode = false;
 // Audio Buffers
 AudioRingBuffer g_ringBuffer;
-int16_t g_grainBuffer[GRAIN_BUFFER_SIZE];
+EXT_RAM_ATTR int16_t g_grainBuffer[GRAIN_BUFFER_SIZE];  // Place large buffer in PSRAM
 volatile uint16_t g_grainWritePos = 0;
 bool g_grainBufferReady = false;
 
