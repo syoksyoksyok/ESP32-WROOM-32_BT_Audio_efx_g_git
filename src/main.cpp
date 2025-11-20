@@ -1510,10 +1510,9 @@ void drawParticleVisualizer() {
     if (g_current_bpm != last_bpm) {
         // Clear only BPM area (left side) - ensure black background
         tft.fillRect(0, VIZ_AREA_Y_START, 120, VIZ_INFO_HEIGHT, TFT_BLACK);
-        // Force text settings: white text on black background
+        // White text (background already cleared with fillRect)
         tft.setTextSize(1);
-        tft.setTextColor(TFT_WHITE);  // Set foreground only first
-        tft.setTextBgColor(TFT_BLACK);  // Then explicitly set background
+        tft.setTextColor(TFT_WHITE);  // Foreground color only
         tft.setCursor(5, VIZ_AREA_Y_START + 2);
         // Use sprintf + print
         char bpm_text[16];
@@ -1526,10 +1525,9 @@ void drawParticleVisualizer() {
     if (g_activeGrainCount != last_grain_count) {
         // Clear only grain count area (right side) - ensure black background
         tft.fillRect(240, VIZ_AREA_Y_START, 80, VIZ_INFO_HEIGHT, TFT_BLACK);
-        // Force text settings: white text on black background
+        // White text (background already cleared with fillRect)
         tft.setTextSize(1);
-        tft.setTextColor(TFT_WHITE);  // Set foreground only first
-        tft.setTextBgColor(TFT_BLACK);  // Then explicitly set background
+        tft.setTextColor(TFT_WHITE);  // Foreground color only
         tft.setCursor(240, VIZ_AREA_Y_START + 2);
         // Use sprintf + print
         char grain_text[16];
