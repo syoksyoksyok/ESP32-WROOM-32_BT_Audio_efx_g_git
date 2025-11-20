@@ -1501,8 +1501,16 @@ void drawParticleVisualizer() {
     tft.setCursor(240, VIZ_AREA_Y_START + 2);
     tft.printf("%d/%dgrn", g_activeGrainCount, MAX_GRAINS);
 
+    // Redraw separator line every frame
+    uint16_t line_color = g_inverse_mode ? TFT_LIGHTGREY : TFT_DARKGREY;
+    tft.drawLine(0, VIZ_SEPARATOR_LINE_Y, 320, VIZ_SEPARATOR_LINE_Y, line_color);
+
     // Clear particle area every frame for smooth animation (white background)
-    tft.fillRect(0, VIZ_PARTICLE_Y_START, 320, VIZ_PARTICLE_HEIGHT, TFT_WHITE);
+    // Extend clear area to account for particle radius (max 10px)
+    // Clear from separator line to buffer bar to prevent color residue
+    int clear_y_start = VIZ_SEPARATOR_LINE_Y + 1;  // Just after separator line (y=113)
+    int clear_height = VIZ_BUFFER_BAR_AREA_Y - clear_y_start - 1;  // Until buffer bar (y=213)
+    tft.fillRect(0, clear_y_start, 320, clear_height, TFT_WHITE);
 
     // Draw pitch scale on particle area
     int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
