@@ -1639,12 +1639,15 @@ void drawParticleVisualizer() {
         int particle_radius = size / 2;
 
         // Calculate Y position (pitch: -24 to +24 semitones mapped to Y axis)
-        // pitch_f = +24 -> top (VIZ_PARTICLE_Y_START)
-        // pitch_f = 0   -> center
-        // pitch_f = -24 -> bottom (VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1)
+        // Add margin to align particles with label centers (text is 8px tall, center offset is 4px)
+        // pitch_f = +24 -> near top (y=119, aligns with +24 label center)
+        // pitch_f = 0   -> center (y=163, aligns with 0 label center)
+        // pitch_f = -24 -> near bottom (y=207, aligns with -24 label center)
+        constexpr int LABEL_MARGIN = 4;  // Margin to align with label centers
         int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
-        int y = y_center - (int)((grain.pitch_f / 24.0f) * (VIZ_PARTICLE_HEIGHT / 2));
-        // Keep particle within bounds (allow it to touch edges)
+        int effective_half_range = (VIZ_PARTICLE_HEIGHT / 2) - LABEL_MARGIN;  // 48 - 4 = 44
+        int y = y_center - (int)((grain.pitch_f / 24.0f) * effective_half_range);
+        // Keep particle within bounds
         y = constrain(y, VIZ_PARTICLE_Y_START, VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1);
 
         // Calculate color (progress-based gradient)
