@@ -127,8 +127,9 @@ constexpr unsigned long UI_TRIGGER_LED_DURATION_MS = 50;
 constexpr int VIZ_AREA_Y_START = 95;
 constexpr int VIZ_INFO_HEIGHT = 15;
 constexpr int VIZ_PARTICLE_Y_START = VIZ_AREA_Y_START + VIZ_INFO_HEIGHT;
-constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 20;
-constexpr int VIZ_BUFFER_BAR_Y = 235;
+constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 32;  // Leave space for buffer bar
+constexpr int VIZ_BUFFER_BAR_AREA_Y = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT + 2;  // y=220
+constexpr int VIZ_BUFFER_BAR_HEIGHT = 12;
 constexpr int VIZ_PARTICLE_MAX_SIZE = 20;  // 2.5x larger (was 8)
 constexpr int VIZ_PARTICLE_MIN_SIZE = 5;   // 2.5x larger (was 2)
 // ================================================================= //
@@ -1461,25 +1462,62 @@ void drawPitchBar(int x, int y, float val, float& lastVal, uint16_t color) {
 // ================================================================= //
 void drawParticleVisualizer() {
     static uint16_t last_write_pos = 0xFFFF;
+    static bool buffer_bar_initialized = false;
     uint16_t bg_color = g_inverse_mode ? TFT_WHITE : TFT_BLACK;
+    uint16_t fg_color = g_inverse_mode ? TFT_BLACK : TFT_WHITE;
 
     // Clear particle area every frame for smooth animation
     tft.fillRect(0, VIZ_PARTICLE_Y_START, 320, VIZ_PARTICLE_HEIGHT, bg_color);
 
-    // Draw buffer progress bar at bottom
-    if (last_write_pos != g_grainWritePos) {
-        // Erase old position marker
-        if (last_write_pos != 0xFFFF) {
-            int old_x = (last_write_pos * 320) / GRAIN_BUFFER_SIZE;
-            tft.drawFastVLine(old_x, VIZ_BUFFER_BAR_Y, 5, bg_color);
+    // Draw enhanced buffer progress bar at bottom
+    if (!buffer_bar_initialized || last_write_pos != g_grainWritePos) {
+        // Clear buffer bar area
+        tft.fillRect(0, VIZ_BUFFER_BAR_AREA_Y, 320, 20, bg_color);
+
+        // Draw scale markers (0%, 25%, 50%, 75%, 100%)
+        tft.setTextSize(1);
+        tft.setTextColor(TFT_DARKGREY, bg_color);
+        tft.setCursor(0, VIZ_BUFFER_BAR_AREA_Y);
+        tft.print("0");
+        tft.setCursor(75, VIZ_BUFFER_BAR_AREA_Y);
+        tft.print("25");
+        tft.setCursor(155, VIZ_BUFFER_BAR_AREA_Y);
+        tft.print("50");
+        tft.setCursor(235, VIZ_BUFFER_BAR_AREA_Y);
+        tft.print("75");
+        tft.setCursor(302, VIZ_BUFFER_BAR_AREA_Y);
+        tft.print("100%");
+
+        // Draw buffer info text (32768 samples / ~743ms)
+        if (!buffer_bar_initialized) {
+            tft.setTextColor(fg_color, bg_color);
+            tft.setCursor(5, VIZ_BUFFER_BAR_AREA_Y + VIZ_BUFFER_BAR_HEIGHT + 9);
+            tft.print("Buf:32768smp/743ms");
+            buffer_bar_initialized = true;
         }
 
-        // Draw buffer bar
-        tft.drawRect(0, VIZ_BUFFER_BAR_Y, 320, 5, g_inverse_mode ? TFT_DARKGREY : TFT_LIGHTGREY);
+        int bar_y = VIZ_BUFFER_BAR_AREA_Y + 8;
 
-        // Draw current write position
+        // Draw buffer bar background (empty)
+        tft.fillRect(0, bar_y, 320, VIZ_BUFFER_BAR_HEIGHT, g_inverse_mode ? TFT_LIGHTGREY : TFT_DARKGREY);
+
+        // Draw filled portion (progress)
+        int fill_width = (g_grainWritePos * 320) / GRAIN_BUFFER_SIZE;
+        tft.fillRect(0, bar_y, fill_width, VIZ_BUFFER_BAR_HEIGHT, TFT_GREEN);
+
+        // Draw current write position marker (thick red line)
         int x_pos = (g_grainWritePos * 320) / GRAIN_BUFFER_SIZE;
-        tft.drawFastVLine(x_pos, VIZ_BUFFER_BAR_Y, 5, TFT_RED);
+        tft.fillRect(x_pos - 1, bar_y, 3, VIZ_BUFFER_BAR_HEIGHT, TFT_RED);
+
+        // Draw tick marks at 25% intervals
+        for (int i = 0; i <= 4; i++) {
+            int tick_x = (i * 320) / 4;
+            tft.drawFastVLine(tick_x, bar_y - 2, 2, fg_color);
+        }
+
+        // Draw border
+        tft.drawRect(0, bar_y, 320, VIZ_BUFFER_BAR_HEIGHT, fg_color);
+
         last_write_pos = g_grainWritePos;
     }
 
