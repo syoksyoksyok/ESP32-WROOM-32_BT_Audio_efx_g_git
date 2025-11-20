@@ -1490,20 +1490,41 @@ void drawParticleVisualizer() {
     uint16_t bg_color = g_inverse_mode ? TFT_WHITE : TFT_BLACK;
     uint16_t fg_color = g_inverse_mode ? TFT_BLACK : TFT_WHITE;
 
-    // Clear BPM/Grain display area to prevent particle color residue
-    tft.fillRect(0, VIZ_AREA_Y_START, 320, VIZ_INFO_HEIGHT, TFT_BLACK);
+    // Update BPM and grain count only when values change (reduce flicker)
+    static float last_bpm = -1.0f;
+    static uint8_t last_grain_count = 255;
+    static bool bpm_area_initialized = false;
 
-    // Redraw BPM and grain count every frame (to prevent particle residue)
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextSize(1);
-    tft.setCursor(5, VIZ_AREA_Y_START + 2);
-    tft.printf("%.1fBPM", g_current_bpm);
-    tft.setCursor(240, VIZ_AREA_Y_START + 2);
-    tft.printf("%d/%dgrn", g_activeGrainCount, MAX_GRAINS);
+    // Initialize BPM area once
+    if (!bpm_area_initialized) {
+        tft.fillRect(0, VIZ_AREA_Y_START, 320, VIZ_INFO_HEIGHT, TFT_BLACK);
+        // Draw separator line once
+        uint16_t line_color = g_inverse_mode ? TFT_LIGHTGREY : TFT_DARKGREY;
+        tft.drawLine(0, VIZ_SEPARATOR_LINE_Y, 320, VIZ_SEPARATOR_LINE_Y, line_color);
+        bpm_area_initialized = true;
+    }
 
-    // Redraw separator line every frame
-    uint16_t line_color = g_inverse_mode ? TFT_LIGHTGREY : TFT_DARKGREY;
-    tft.drawLine(0, VIZ_SEPARATOR_LINE_Y, 320, VIZ_SEPARATOR_LINE_Y, line_color);
+    // Update BPM only if changed
+    if (g_current_bpm != last_bpm) {
+        // Clear only BPM area (left side)
+        tft.fillRect(0, VIZ_AREA_Y_START, 120, VIZ_INFO_HEIGHT, TFT_BLACK);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.setTextSize(1);
+        tft.setCursor(5, VIZ_AREA_Y_START + 2);
+        tft.printf("%.1fBPM", g_current_bpm);
+        last_bpm = g_current_bpm;
+    }
+
+    // Update grain count only if changed
+    if (g_activeGrainCount != last_grain_count) {
+        // Clear only grain count area (right side)
+        tft.fillRect(240, VIZ_AREA_Y_START, 80, VIZ_INFO_HEIGHT, TFT_BLACK);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.setTextSize(1);
+        tft.setCursor(240, VIZ_AREA_Y_START + 2);
+        tft.printf("%d/%dgrn", g_activeGrainCount, MAX_GRAINS);
+        last_grain_count = g_activeGrainCount;
+    }
 
     // Calculate pitch scale positions (used for initial draw and particle positioning)
     int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
