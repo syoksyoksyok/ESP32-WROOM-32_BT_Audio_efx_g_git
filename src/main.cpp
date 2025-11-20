@@ -1492,26 +1492,41 @@ void drawParticleVisualizer() {
 
         int bar_y = VIZ_BUFFER_BAR_AREA_Y + 8;
 
-        // Draw buffer bar background (empty) - full width, half height
-        tft.fillRect(0, bar_y, VIZ_BUFFER_BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT,
-                     g_inverse_mode ? TFT_LIGHTGREY : TFT_DARKGREY);
+        // Draw segmented buffer bar (battery-style with purple segments)
+        constexpr int SEGMENT_COUNT = 32;
+        constexpr int SEGMENT_WIDTH = 9;
+        constexpr int SEGMENT_GAP = 1;
+        constexpr int SEGMENT_TOTAL_WIDTH = SEGMENT_WIDTH + SEGMENT_GAP;
 
-        // Draw filled portion (progress)
-        int fill_width = (g_grainWritePos * VIZ_BUFFER_BAR_WIDTH) / GRAIN_BUFFER_SIZE;
-        tft.fillRect(0, bar_y, fill_width, VIZ_BUFFER_BAR_HEIGHT, TFT_GREEN);
+        // Calculate how many segments to fill based on buffer progress
+        int filled_segments = (g_grainWritePos * SEGMENT_COUNT) / GRAIN_BUFFER_SIZE;
 
-        // Draw current write position marker (red line, adjusted for thinner bar)
-        int x_pos = (g_grainWritePos * VIZ_BUFFER_BAR_WIDTH) / GRAIN_BUFFER_SIZE;
+        // Draw each segment
+        for (int i = 0; i < SEGMENT_COUNT; i++) {
+            int seg_x = i * SEGMENT_TOTAL_WIDTH;
+
+            if (i < filled_segments) {
+                // Filled segment (purple)
+                tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_PURPLE);
+            } else {
+                // Empty segment (dark background)
+                tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT,
+                           g_inverse_mode ? TFT_LIGHTGREY : TFT_DARKGREY);
+            }
+        }
+
+        // Draw current write position marker (red line)
+        int x_pos = (g_grainWritePos * (SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH)) / GRAIN_BUFFER_SIZE;
         tft.fillRect(x_pos - 1, bar_y, 2, VIZ_BUFFER_BAR_HEIGHT, TFT_RED);
 
         // Draw tick marks at 25% intervals
         for (int i = 0; i <= 4; i++) {
-            int tick_x = (i * VIZ_BUFFER_BAR_WIDTH) / 4;
+            int tick_x = (i * SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH) / 4;
             tft.drawFastVLine(tick_x, bar_y - 2, 2, fg_color);
         }
 
-        // Draw border
-        tft.drawRect(0, bar_y, VIZ_BUFFER_BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT, fg_color);
+        // Draw border around entire bar area
+        tft.drawRect(0, bar_y, SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH, VIZ_BUFFER_BAR_HEIGHT, fg_color);
 
         // Draw buffer info text (32768 samples / ~743ms) - every frame
         tft.setTextColor(fg_color, bg_color);
