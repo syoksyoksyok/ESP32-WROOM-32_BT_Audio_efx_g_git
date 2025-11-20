@@ -1711,18 +1711,39 @@ void drawParticleVisualizer() {
         // Keep particle within bounds
         y = constrain(y, VIZ_PARTICLE_Y_START, VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1);
 
-        // Calculate color (progress-based gradient)
-        uint16_t color;
-        if (progress < 0.33f) {
-            // Start: Cyan to Yellow
-            color = TFT_CYAN;
-        } else if (progress < 0.66f) {
-            // Middle: Yellow to Magenta
-            color = TFT_YELLOW;
-        } else {
-            // End: Magenta to Red
-            color = TFT_MAGENTA;
-        }
+        // Calculate color based on grain index (10 distinct colors)
+        // Each grain gets its own color for easy identification
+        static const uint16_t grain_colors[MAX_GRAINS] = {
+            TFT_RED,      // Grain 0: Red
+            TFT_GREEN,    // Grain 1: Green
+            TFT_BLUE,     // Grain 2: Blue
+            TFT_YELLOW,   // Grain 3: Yellow
+            TFT_CYAN,     // Grain 4: Cyan
+            TFT_MAGENTA,  // Grain 5: Magenta
+            TFT_ORANGE,   // Grain 6: Orange
+            0x8010,       // Grain 7: Purple (RGB565: 128,0,128)
+            0xFC18,       // Grain 8: Pink (RGB565: 255,128,192)
+            TFT_WHITE     // Grain 9: White
+        };
+
+        uint16_t base_color = grain_colors[grain_idx];
+
+        // Apply fade based on progress (start: 100% brightness, end: 20% brightness)
+        // This creates a fade-out effect as the grain completes
+        float brightness = 1.0f - (progress * 0.8f);  // 1.0 -> 0.2
+
+        // Extract RGB components from RGB565
+        uint8_t r = ((base_color >> 11) & 0x1F) * 8;
+        uint8_t g = ((base_color >> 5) & 0x3F) * 4;
+        uint8_t b = (base_color & 0x1F) * 8;
+
+        // Apply brightness
+        r = (uint8_t)(r * brightness);
+        g = (uint8_t)(g * brightness);
+        b = (uint8_t)(b * brightness);
+
+        // Convert back to RGB565
+        uint16_t color = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
 
         // Draw particle (filled circle)
         tft.fillCircle(x, y, particle_radius, color);
