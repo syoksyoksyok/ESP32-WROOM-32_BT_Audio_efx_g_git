@@ -127,11 +127,11 @@ constexpr unsigned long UI_TRIGGER_LED_DURATION_MS = 50;
 constexpr int VIZ_AREA_Y_START = 95;
 constexpr int VIZ_INFO_HEIGHT = 15;
 constexpr int VIZ_PARTICLE_Y_START = VIZ_AREA_Y_START + VIZ_INFO_HEIGHT;
-constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 40;  // Leave more space for buffer bar
-constexpr int VIZ_BUFFER_BAR_AREA_Y = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT + 2;  // y=202
-constexpr int VIZ_BUFFER_BAR_HEIGHT = 12;
-constexpr int VIZ_BUFFER_BAR_WIDTH = 160;  // Half of screen width
-constexpr int VIZ_BUFFER_BAR_X_OFFSET = (320 - VIZ_BUFFER_BAR_WIDTH) / 2;  // Center alignment
+constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 48;  // Leave space for buffer bar
+constexpr int VIZ_BUFFER_BAR_AREA_Y = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT + 2;  // y=192
+constexpr int VIZ_BUFFER_BAR_HEIGHT = 6;  // Half height (was 12)
+constexpr int VIZ_BUFFER_BAR_WIDTH = 320;  // Full width (restored)
+constexpr int VIZ_BUFFER_BAR_X_OFFSET = 0;  // Left aligned
 constexpr int VIZ_PARTICLE_MAX_SIZE = 20;  // 2.5x larger (was 8)
 constexpr int VIZ_PARTICLE_MIN_SIZE = 5;   // 2.5x larger (was 2)
 // ================================================================= //
@@ -1474,49 +1474,49 @@ void drawParticleVisualizer() {
     // Draw enhanced buffer progress bar at bottom
     if (!buffer_bar_initialized || last_write_pos != g_grainWritePos) {
         // Clear buffer bar area
-        tft.fillRect(0, VIZ_BUFFER_BAR_AREA_Y, 320, 38, bg_color);
+        tft.fillRect(0, VIZ_BUFFER_BAR_AREA_Y, 320, 48, bg_color);
 
-        // Draw scale markers (0%, 25%, 50%, 75%, 100%) - centered
+        // Draw scale markers (0%, 25%, 50%, 75%, 100%) - full width
         tft.setTextSize(1);
         tft.setTextColor(TFT_DARKGREY, bg_color);
-        tft.setCursor(VIZ_BUFFER_BAR_X_OFFSET, VIZ_BUFFER_BAR_AREA_Y);
+        tft.setCursor(0, VIZ_BUFFER_BAR_AREA_Y);
         tft.print("0");
-        tft.setCursor(VIZ_BUFFER_BAR_X_OFFSET + 35, VIZ_BUFFER_BAR_AREA_Y);
+        tft.setCursor(75, VIZ_BUFFER_BAR_AREA_Y);
         tft.print("25");
-        tft.setCursor(VIZ_BUFFER_BAR_X_OFFSET + 75, VIZ_BUFFER_BAR_AREA_Y);
+        tft.setCursor(155, VIZ_BUFFER_BAR_AREA_Y);
         tft.print("50");
-        tft.setCursor(VIZ_BUFFER_BAR_X_OFFSET + 115, VIZ_BUFFER_BAR_AREA_Y);
+        tft.setCursor(235, VIZ_BUFFER_BAR_AREA_Y);
         tft.print("75");
-        tft.setCursor(VIZ_BUFFER_BAR_X_OFFSET + 145, VIZ_BUFFER_BAR_AREA_Y);
+        tft.setCursor(302, VIZ_BUFFER_BAR_AREA_Y);
         tft.print("100%");
 
         int bar_y = VIZ_BUFFER_BAR_AREA_Y + 8;
 
-        // Draw buffer bar background (empty) - centered, half width
-        tft.fillRect(VIZ_BUFFER_BAR_X_OFFSET, bar_y, VIZ_BUFFER_BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT,
+        // Draw buffer bar background (empty) - full width, half height
+        tft.fillRect(0, bar_y, VIZ_BUFFER_BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT,
                      g_inverse_mode ? TFT_LIGHTGREY : TFT_DARKGREY);
 
         // Draw filled portion (progress)
         int fill_width = (g_grainWritePos * VIZ_BUFFER_BAR_WIDTH) / GRAIN_BUFFER_SIZE;
-        tft.fillRect(VIZ_BUFFER_BAR_X_OFFSET, bar_y, fill_width, VIZ_BUFFER_BAR_HEIGHT, TFT_GREEN);
+        tft.fillRect(0, bar_y, fill_width, VIZ_BUFFER_BAR_HEIGHT, TFT_GREEN);
 
-        // Draw current write position marker (thick red line)
-        int x_pos = VIZ_BUFFER_BAR_X_OFFSET + (g_grainWritePos * VIZ_BUFFER_BAR_WIDTH) / GRAIN_BUFFER_SIZE;
-        tft.fillRect(x_pos - 1, bar_y, 3, VIZ_BUFFER_BAR_HEIGHT, TFT_RED);
+        // Draw current write position marker (red line, adjusted for thinner bar)
+        int x_pos = (g_grainWritePos * VIZ_BUFFER_BAR_WIDTH) / GRAIN_BUFFER_SIZE;
+        tft.fillRect(x_pos - 1, bar_y, 2, VIZ_BUFFER_BAR_HEIGHT, TFT_RED);
 
         // Draw tick marks at 25% intervals
         for (int i = 0; i <= 4; i++) {
-            int tick_x = VIZ_BUFFER_BAR_X_OFFSET + (i * VIZ_BUFFER_BAR_WIDTH) / 4;
+            int tick_x = (i * VIZ_BUFFER_BAR_WIDTH) / 4;
             tft.drawFastVLine(tick_x, bar_y - 2, 2, fg_color);
         }
 
         // Draw border
-        tft.drawRect(VIZ_BUFFER_BAR_X_OFFSET, bar_y, VIZ_BUFFER_BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT, fg_color);
+        tft.drawRect(0, bar_y, VIZ_BUFFER_BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT, fg_color);
 
         // Draw buffer info text (32768 samples / ~743ms) - only once
         if (!buffer_bar_initialized) {
             tft.setTextColor(fg_color, bg_color);
-            tft.setCursor(60, VIZ_BUFFER_BAR_AREA_Y + VIZ_BUFFER_BAR_HEIGHT + 11);
+            tft.setCursor(80, VIZ_BUFFER_BAR_AREA_Y + VIZ_BUFFER_BAR_HEIGHT + 11);
             tft.print("Buf:32768smp/743ms");
             buffer_bar_initialized = true;
         }
