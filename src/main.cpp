@@ -1505,21 +1505,53 @@ void drawParticleVisualizer() {
     uint16_t line_color = g_inverse_mode ? TFT_LIGHTGREY : TFT_DARKGREY;
     tft.drawLine(0, VIZ_SEPARATOR_LINE_Y, 320, VIZ_SEPARATOR_LINE_Y, line_color);
 
-    // Clear particle area every frame for smooth animation (black background)
-    // Extend clear area to account for particle radius (max 10px)
-    // Clear from separator line to buffer bar to prevent color residue
-    int clear_y_start = VIZ_SEPARATOR_LINE_Y + 1;  // Just after separator line (y=113)
-    int clear_height = VIZ_BUFFER_BAR_AREA_Y - clear_y_start - 1;  // Until buffer bar (y=213)
-    tft.fillRect(0, clear_y_start, 320, clear_height, TFT_BLACK);
-
-    // Draw pitch scale on particle area
+    // Calculate pitch scale positions (used for initial draw and particle positioning)
     int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
     int y_top = VIZ_PARTICLE_Y_START;
     int y_bottom = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1;
 
-    // Draw center reference line (pitch = 0) as dashed line
-    for (int x = 0; x < 320; x += 8) {
-        tft.drawLine(x, y_center, x + 4, y_center, TFT_LIGHTGREY);
+    // Initialize particle area once (first frame only)
+    static bool particle_area_initialized = false;
+    if (!particle_area_initialized) {
+        // Clear entire particle area initially
+        int clear_y_start = VIZ_SEPARATOR_LINE_Y + 1;
+        int clear_height = VIZ_BUFFER_BAR_AREA_Y - clear_y_start - 1;
+        tft.fillRect(0, clear_y_start, 320, clear_height, TFT_BLACK);
+
+        // Draw center reference line (pitch = 0) as dashed line
+        for (int x = 0; x < 320; x += 8) {
+            tft.drawLine(x, y_center, x + 4, y_center, TFT_LIGHTGREY);
+        }
+
+        // Draw pitch scale labels (only once)
+        tft.setTextSize(1);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+        // Left side labels
+        tft.setCursor(2, y_top);
+        tft.print("+24");
+        tft.setCursor(2, y_center - 4);
+        tft.print(" 0");
+        tft.setCursor(2, y_bottom - 8);
+        tft.print("-24");
+
+        // Right side labels
+        tft.setCursor(302, y_top);
+        tft.print("+24");
+        tft.setCursor(302, y_center - 4);
+        tft.print(" 0");
+        tft.setCursor(302, y_bottom - 8);
+        tft.print("-24");
+
+        particle_area_initialized = true;
+    }
+
+    // Clear previous particle positions only (using trail data)
+    for (uint8_t i = 0; i < MAX_GRAINS; i++) {
+        if (trails[i].valid) {
+            // Clear the old particle by filling with black
+            tft.fillCircle(trails[i].x, trails[i].y, trails[i].radius, TFT_BLACK);
+        }
     }
 
     // Draw enhanced buffer progress bar at bottom
@@ -1687,26 +1719,6 @@ void drawParticleVisualizer() {
             trails[i].valid = false;
         }
     }
-
-    // Draw pitch scale labels (simple, with background color to cover particles)
-    tft.setTextSize(1);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-
-    // Left side labels
-    tft.setCursor(2, y_top);
-    tft.print("+24");
-    tft.setCursor(2, y_center - 4);
-    tft.print(" 0");
-    tft.setCursor(2, y_bottom - 8);
-    tft.print("-24");
-
-    // Right side labels
-    tft.setCursor(302, y_top);
-    tft.print("+24");
-    tft.setCursor(302, y_center - 4);
-    tft.print(" 0");
-    tft.setCursor(302, y_bottom - 8);
-    tft.print("-24");
 }
 
 // ================================================================= //
