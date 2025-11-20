@@ -1490,6 +1490,17 @@ void drawParticleVisualizer() {
     uint16_t bg_color = g_inverse_mode ? TFT_WHITE : TFT_BLACK;
     uint16_t fg_color = g_inverse_mode ? TFT_BLACK : TFT_WHITE;
 
+    // Clear BPM/Grain display area to prevent particle color residue
+    tft.fillRect(0, VIZ_AREA_Y_START, 320, VIZ_INFO_HEIGHT, TFT_WHITE);
+
+    // Redraw BPM and grain count every frame (to prevent particle residue)
+    tft.setTextColor(TFT_BLACK, TFT_WHITE);
+    tft.setTextSize(1);
+    tft.setCursor(5, VIZ_AREA_Y_START + 2);
+    tft.printf("%.1fBPM", g_current_bpm);
+    tft.setCursor(240, VIZ_AREA_Y_START + 2);
+    tft.printf("%d/%dgrn", g_activeGrainCount, MAX_GRAINS);
+
     // Clear particle area every frame for smooth animation (white background)
     tft.fillRect(0, VIZ_PARTICLE_Y_START, 320, VIZ_PARTICLE_HEIGHT, TFT_WHITE);
 
@@ -1497,10 +1508,6 @@ void drawParticleVisualizer() {
     int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
     int y_top = VIZ_PARTICLE_Y_START;
     int y_bottom = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1;
-
-    // Draw boundary lines (gray)
-    tft.drawLine(0, y_top, 320, y_top, TFT_DARKGREY);
-    tft.drawLine(0, y_bottom, 320, y_bottom, TFT_DARKGREY);
 
     // Draw center reference line (pitch = 0) as dashed line
     for (int x = 0; x < 320; x += 8) {
