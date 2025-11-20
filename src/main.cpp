@@ -126,6 +126,7 @@ constexpr unsigned long UI_TRIGGER_LED_DURATION_MS = 50;
 // Particle Visualizer Constants
 constexpr int VIZ_AREA_Y_START = 95;   // BPM/Grain display: below parameter area
 constexpr int VIZ_INFO_HEIGHT = 15;
+constexpr int VIZ_SEPARATOR_LINE_Y = 112;  // Separator line directly below BPM display
 constexpr int VIZ_PARTICLE_Y_START = 145;  // Particle area: moved down independently
 constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 28;  // Leave space for buffer bar
 constexpr int VIZ_BUFFER_BAR_AREA_Y = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT + 2;  // y=214
@@ -1416,8 +1417,8 @@ void drawUiFrame() {
                  GET_VISUALIZER_BG_COLOR());
     tft.drawCircle(UI_TRIGGER_LED_X, UI_TRIGGER_LED_Y, UI_TRIGGER_LED_RADIUS, TFT_DARKGREY);
 
-    // Draw visualizer separator line
-    tft.drawLine(0, VIZ_PARTICLE_Y_START - 1, 320, VIZ_PARTICLE_Y_START - 1, line_color);
+    // Draw visualizer separator line (directly below BPM display)
+    tft.drawLine(0, VIZ_SEPARATOR_LINE_Y, 320, VIZ_SEPARATOR_LINE_Y, line_color);
 }
 
 void drawParameterBar(int x, int y, int16_t val, int16_t& lastVal, uint16_t color) {
