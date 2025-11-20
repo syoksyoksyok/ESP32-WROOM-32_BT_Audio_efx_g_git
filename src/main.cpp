@@ -1513,15 +1513,13 @@ void drawParticleVisualizer() {
         // Draw border
         tft.drawRect(0, bar_y, VIZ_BUFFER_BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT, fg_color);
 
-        // Draw buffer info text (32768 samples / ~743ms) - only once
-        if (!buffer_bar_initialized) {
-            tft.setTextColor(fg_color, bg_color);
-            tft.setCursor(80, VIZ_BUFFER_BAR_AREA_Y + VIZ_BUFFER_BAR_HEIGHT + 11);
-            tft.print("Buf:32768smp/743ms");
-            buffer_bar_initialized = true;
-        }
+        // Draw buffer info text (32768 samples / ~743ms) - every frame
+        tft.setTextColor(fg_color, bg_color);
+        tft.setCursor(80, VIZ_BUFFER_BAR_AREA_Y + VIZ_BUFFER_BAR_HEIGHT + 11);
+        tft.print("Buf:32768smp/743ms");
 
         last_write_pos = g_grainWritePos;
+        buffer_bar_initialized = true;
     }
 
     // Draw particles for each active grain
