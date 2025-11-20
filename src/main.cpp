@@ -95,11 +95,11 @@ constexpr int16_t PAN_CENTER_Q15 = 23170;  // ~0.707 in Q15 format for center pa
 // SECTION: Audio Engine Constants
 // ================================================================= //
 constexpr int RING_BUFFER_SIZE = 4096;
-#define GRAIN_BUFFER_SIZE 32768
-#define MAX_GRAIN_SIZE    32768
+#define GRAIN_BUFFER_SIZE 131072  // 256KB buffer (was 32768)
+#define MAX_GRAIN_SIZE    131072  // Max ~3 seconds (was 65536)
 #define GRAIN_BUFFER_MASK (GRAIN_BUFFER_SIZE - 1)
 constexpr int MAX_GRAINS = 10;  // Increased from 6 for richer visuals
-constexpr int MIN_GRAIN_SIZE = 128;
+constexpr int MIN_GRAIN_SIZE = 512;  // Min ~11.6ms (was 128)
 constexpr int FEEDBACK_BUFFER_SIZE = 512;
 constexpr int I2S_BUFFER_SAMPLES = 128;
 constexpr int DEJA_VU_BUFFER_SIZE = 16;
@@ -124,11 +124,11 @@ constexpr int UI_TRIGGER_LED_RADIUS = 4;
 constexpr unsigned long UI_TRIGGER_LED_DURATION_MS = 50;
 
 // Particle Visualizer Constants
-constexpr int VIZ_AREA_Y_START = 95;
+constexpr int VIZ_AREA_Y_START = 95;   // BPM/Grain display: below parameter area
 constexpr int VIZ_INFO_HEIGHT = 15;
-constexpr int VIZ_PARTICLE_Y_START = VIZ_AREA_Y_START + VIZ_INFO_HEIGHT;
-constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 48;  // Leave space for buffer bar
-constexpr int VIZ_BUFFER_BAR_AREA_Y = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT + 2;  // y=192
+constexpr int VIZ_PARTICLE_Y_START = 145;  // Particle area: moved down independently
+constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 28;  // Leave space for buffer bar
+constexpr int VIZ_BUFFER_BAR_AREA_Y = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT + 2;  // y=214
 constexpr int VIZ_BUFFER_BAR_HEIGHT = 6;  // Half height (was 12)
 constexpr int VIZ_BUFFER_BAR_WIDTH = 320;  // Full width (restored)
 constexpr int VIZ_BUFFER_BAR_X_OFFSET = 0;  // Left aligned
@@ -254,7 +254,7 @@ BluetoothA2DPSink a2dp_sink;
 bool g_inverse_mode = false;
 // Audio Buffers
 AudioRingBuffer g_ringBuffer;
-int16_t g_grainBuffer[GRAIN_BUFFER_SIZE];
+EXT_RAM_ATTR int16_t g_grainBuffer[GRAIN_BUFFER_SIZE];  // Place large buffer in PSRAM
 volatile uint16_t g_grainWritePos = 0;
 bool g_grainBufferReady = false;
 
