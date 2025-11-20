@@ -95,8 +95,8 @@ constexpr int16_t PAN_CENTER_Q15 = 23170;  // ~0.707 in Q15 format for center pa
 // SECTION: Audio Engine Constants
 // ================================================================= //
 constexpr int RING_BUFFER_SIZE = 4096;
-#define GRAIN_BUFFER_SIZE 65536   // 128KB (WROOM-32 has no PSRAM)
-#define MAX_GRAIN_SIZE    65536   // Max ~1.49 seconds (44.1kHz stereo)
+#define GRAIN_BUFFER_SIZE 49152   // 96KB (WROOM-32 has no PSRAM, 16 grains limit)
+#define MAX_GRAIN_SIZE    49152   // Max ~1.11 seconds (44.1kHz stereo)
 #define GRAIN_BUFFER_MASK (GRAIN_BUFFER_SIZE - 1)
 constexpr int MAX_GRAINS = 16;  // Increased for richer polyphony
 constexpr int MIN_GRAIN_SIZE = 512;  // Min ~11.6ms (was 128)
@@ -1629,10 +1629,10 @@ void drawParticleVisualizer() {
             tft.drawFastVLine(tick_x, bar_y - 2, 2, TFT_WHITE);
         }
 
-        // Draw buffer info text (65536 samples / ~1.49s) - white text on black background
+        // Draw buffer info text (49152 samples / ~1.11s) - white text on black background
         tft.setTextColor(TFT_WHITE, TFT_BLACK);
         tft.setCursor(70, VIZ_BUFFER_BAR_AREA_Y + VIZ_BUFFER_BAR_HEIGHT + 11);
-        tft.print("Buf:65536smp/1.49s");
+        tft.print("Buf:49152smp/1.11s");
 
         buffer_bar_initialized = true;
     }
