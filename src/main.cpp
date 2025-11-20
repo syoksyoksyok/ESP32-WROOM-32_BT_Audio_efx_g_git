@@ -129,8 +129,8 @@ constexpr int VIZ_INFO_HEIGHT = 15;
 constexpr int VIZ_PARTICLE_Y_START = VIZ_AREA_Y_START + VIZ_INFO_HEIGHT;
 constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 20;
 constexpr int VIZ_BUFFER_BAR_Y = 235;
-constexpr int VIZ_PARTICLE_MAX_SIZE = 8;
-constexpr int VIZ_PARTICLE_MIN_SIZE = 2;
+constexpr int VIZ_PARTICLE_MAX_SIZE = 20;  // 2.5x larger (was 8)
+constexpr int VIZ_PARTICLE_MIN_SIZE = 5;   // 2.5x larger (was 2)
 // ================================================================= //
 // SECTION: Look-Up Table (LUT) Sizes
 // ================================================================= //
