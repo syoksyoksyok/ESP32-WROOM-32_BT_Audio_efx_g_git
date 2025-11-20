@@ -117,7 +117,7 @@ constexpr int UI_BAR_HEIGHT = 8;
 #define TFT_SKYBLUE 0x5D9B
 #define TFT_AQUA 0x07FF
 #define TFT_LIGHTBLUE 0xAFDF
-#define GET_VISUALIZER_BG_COLOR() (g_inverse_mode ? TFT_WHITE : TFT_BLACK)
+#define GET_VISUALIZER_BG_COLOR() TFT_WHITE  // Visualizer area always white background
 constexpr int UI_TRIGGER_LED_X = 310;
 constexpr int UI_TRIGGER_LED_Y = 10;
 constexpr int UI_TRIGGER_LED_RADIUS = 4;
@@ -1468,8 +1468,8 @@ void drawParticleVisualizer() {
     uint16_t bg_color = g_inverse_mode ? TFT_WHITE : TFT_BLACK;
     uint16_t fg_color = g_inverse_mode ? TFT_BLACK : TFT_WHITE;
 
-    // Clear particle area every frame for smooth animation
-    tft.fillRect(0, VIZ_PARTICLE_Y_START, 320, VIZ_PARTICLE_HEIGHT, bg_color);
+    // Clear particle area every frame for smooth animation (white background)
+    tft.fillRect(0, VIZ_PARTICLE_Y_START, 320, VIZ_PARTICLE_HEIGHT, TFT_WHITE);
 
     // Draw enhanced buffer progress bar at bottom
     if (!buffer_bar_initialized || last_write_pos != g_grainWritePos) {
