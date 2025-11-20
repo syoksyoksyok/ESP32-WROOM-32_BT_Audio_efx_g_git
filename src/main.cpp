@@ -1522,26 +1522,6 @@ void drawParticleVisualizer() {
         tft.drawLine(x, y_center, x + 4, y_center, TFT_LIGHTGREY);
     }
 
-    // Draw pitch scale labels
-    tft.setTextSize(1);
-    tft.setTextColor(TFT_BLACK, TFT_WHITE);
-
-    // Left side labels
-    tft.setCursor(2, y_top);
-    tft.print("+24");
-    tft.setCursor(2, y_center - 4);
-    tft.print(" 0");
-    tft.setCursor(2, y_bottom - 8);
-    tft.print("-24");
-
-    // Right side labels
-    tft.setCursor(302, y_top);
-    tft.print("+24");
-    tft.setCursor(302, y_center - 4);
-    tft.print(" 0");
-    tft.setCursor(302, y_bottom - 8);
-    tft.print("-24");
-
     // Draw enhanced buffer progress bar at bottom
     if (!buffer_bar_initialized || last_write_pos != g_grainWritePos) {
         // Clear buffer bar area with white background
@@ -1704,6 +1684,26 @@ void drawParticleVisualizer() {
             trails[i].valid = false;
         }
     }
+
+    // Draw pitch scale labels AFTER particles (to prevent color residue)
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_BLACK, TFT_WHITE);
+
+    // Left side labels
+    tft.setCursor(2, y_top);
+    tft.print("+24");
+    tft.setCursor(2, y_center - 4);
+    tft.print(" 0");
+    tft.setCursor(2, y_bottom - 8);
+    tft.print("-24");
+
+    // Right side labels
+    tft.setCursor(302, y_top);
+    tft.print("+24");
+    tft.setCursor(302, y_center - 4);
+    tft.print(" 0");
+    tft.setCursor(302, y_bottom - 8);
+    tft.print("-24");
 }
 
 // ================================================================= //
