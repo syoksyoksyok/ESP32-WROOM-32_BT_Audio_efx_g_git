@@ -98,7 +98,7 @@ constexpr int RING_BUFFER_SIZE = 4096;
 #define GRAIN_BUFFER_SIZE 32768   // 64KB (WROOM-32 has no PSRAM)
 #define MAX_GRAIN_SIZE    32768   // Max ~0.74 seconds (limited by buffer)
 #define GRAIN_BUFFER_MASK (GRAIN_BUFFER_SIZE - 1)
-constexpr int MAX_GRAINS = 10;  // Increased from 6 for richer visuals
+constexpr int MAX_GRAINS = 16;  // Increased for richer polyphony
 constexpr int MIN_GRAIN_SIZE = 512;  // Min ~11.6ms (was 128)
 constexpr int FEEDBACK_BUFFER_SIZE = 512;
 constexpr int I2S_BUFFER_SAMPLES = 128;
@@ -715,8 +715,8 @@ void randomizeDejaVuBuffer() {
     g_params.size_q15         = 1000 + (esp_random() % 31767);
     g_params.deja_vu_q15      = esp_random() % 32768;
     g_params.texture_q15      = esp_random() % 32768;
-    // SPR: 70-90% range (22937-29490)
-    g_params.stereoSpread_q15 = 22937 + (esp_random() % 6554);
+    // SPR: 85-100% range (27852-32767)
+    g_params.stereoSpread_q15 = 27852 + (esp_random() % 4916);
     g_params.feedback_q15     = g_feedback_lut_q15[esp_random() % FEEDBACK_LUT_SIZE];
     g_params.dryWet_q15       = 32767;
 
@@ -984,8 +984,8 @@ void initializeSnapshots() {
         g_snapshots[i].size_q15         = 1000 + (esp_random() % 31767);
         g_snapshots[i].deja_vu_q15      = esp_random() % 32768;
         g_snapshots[i].texture_q15      = esp_random() % 32768;
-        // SPR: 70-90% range (22937-29490)
-        g_snapshots[i].stereoSpread_q15 = 22937 + (esp_random() % 6554);
+        // SPR: 85-100% range (27852-32767)
+        g_snapshots[i].stereoSpread_q15 = 27852 + (esp_random() % 4916);
         g_snapshots[i].feedback_q15     = g_feedback_lut_q15[esp_random() % FEEDBACK_LUT_SIZE];
         // 0.0f～1.0fのランダムなfloatを生成し、pitch範囲に変換する
         float random_float = (float)esp_random() / (float)UINT32_MAX;
@@ -1709,7 +1709,7 @@ void drawParticleVisualizer() {
         // Keep particle within bounds
         y = constrain(y, VIZ_PARTICLE_Y_START, VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1);
 
-        // Calculate color based on grain index (10 distinct colors)
+        // Calculate color based on grain index (16 distinct colors)
         // Each grain gets its own color for easy identification
         static const uint16_t grain_colors[MAX_GRAINS] = {
             TFT_RED,      // Grain 0: Red
@@ -1721,7 +1721,13 @@ void drawParticleVisualizer() {
             TFT_ORANGE,   // Grain 6: Orange
             0x8010,       // Grain 7: Purple (RGB565: 128,0,128)
             0xFC18,       // Grain 8: Pink (RGB565: 255,128,192)
-            TFT_WHITE     // Grain 9: White
+            TFT_WHITE,    // Grain 9: White
+            0x5D9B,       // Grain 10: Light Blue (RGB565: 90,180,220)
+            0x87E0,       // Grain 11: Lime (RGB565: 135,255,0)
+            0xFEA0,       // Grain 12: Gold (RGB565: 255,215,0)
+            TFT_SKYBLUE,  // Grain 13: Sky Blue
+            0xFBEA,       // Grain 14: Coral (RGB565: 255,127,80)
+            0xE71C        // Grain 15: Lavender (RGB565: 230,230,250)
         };
 
         uint16_t base_color = grain_colors[grain_idx];
