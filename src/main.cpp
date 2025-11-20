@@ -46,7 +46,7 @@ constexpr int BPM_LED_PIN = 2;
 // SECTION: System & Timing Constants
 // ================================================================= //
 constexpr unsigned long ADC_UPDATE_INTERVAL_MS = 55;
-constexpr unsigned long DISPLAY_UPDATE_INTERVAL_MS = 33;
+constexpr unsigned long DISPLAY_UPDATE_INTERVAL_MS = 16;  // 60fps (was 33ms/30fps)
 constexpr unsigned long BUTTON_LONG_PRESS_MS = 800;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 15;
 constexpr unsigned long RANDOMIZE_FLASH_DURATION_MS = 200;
@@ -98,7 +98,7 @@ constexpr int RING_BUFFER_SIZE = 4096;
 #define GRAIN_BUFFER_SIZE 32768
 #define MAX_GRAIN_SIZE    32768
 #define GRAIN_BUFFER_MASK (GRAIN_BUFFER_SIZE - 1)
-constexpr int MAX_GRAINS = 6;
+constexpr int MAX_GRAINS = 10;  // Increased from 6 for richer visuals
 constexpr int MIN_GRAIN_SIZE = 128;
 constexpr int FEEDBACK_BUFFER_SIZE = 512;
 constexpr int I2S_BUFFER_SAMPLES = 128;
@@ -1347,20 +1347,21 @@ void updateDisplay() {
         tft.setCursor(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 6 + 2);
         tft.print(getPot4ModeString(g_pot4_mode));
     }
-    // Compact BPM display
+    // Compact BPM display (white background, black text)
     if (abs(g_current_bpm - g_display_cache.bpm) > 0.1f) {
         g_display_cache.bpm = g_current_bpm;
-        tft.fillRect(5, VIZ_AREA_Y_START + 2, 80, 10, bg_color);
-        tft.setTextColor(txt_color, bg_color);
+        tft.fillRect(5, VIZ_AREA_Y_START + 2, 80, 10, TFT_WHITE);
+        tft.setTextColor(TFT_BLACK, TFT_WHITE);
         tft.setTextSize(1);
         tft.setCursor(5, VIZ_AREA_Y_START + 2);
         tft.printf("%.1fBPM", g_current_bpm);
     }
 
-    // Grain count display
+    // Grain count display (white background, black text)
     if (g_activeGrainCount != g_display_cache.active_grains) {
         g_display_cache.active_grains = g_activeGrainCount;
-        tft.fillRect(240, VIZ_AREA_Y_START + 2, 75, 10, bg_color);
+        tft.fillRect(240, VIZ_AREA_Y_START + 2, 75, 10, TFT_WHITE);
+        tft.setTextColor(TFT_BLACK, TFT_WHITE);
         tft.setCursor(240, VIZ_AREA_Y_START + 2);
         tft.printf("%d/%dgrn", g_activeGrainCount, MAX_GRAINS);
     }
@@ -1536,7 +1537,35 @@ void drawParticleVisualizer() {
         buffer_bar_initialized = true;
     }
 
-    // Draw particles for each active grain
+    // Trail effect: store previous particle positions
+    struct ParticleTrail {
+        int x, y, radius;
+        uint16_t color;
+        bool valid;
+    };
+    static ParticleTrail trails[MAX_GRAINS] = {};
+
+    // Draw trails (previous frame particles with lighter color)
+    for (uint8_t i = 0; i < MAX_GRAINS; i++) {
+        if (trails[i].valid) {
+            // Make trail color lighter (blend with white)
+            uint16_t trail_color = trails[i].color;
+            // Extract RGB components from RGB565
+            uint8_t r = ((trail_color >> 11) & 0x1F) * 8;
+            uint8_t g = ((trail_color >> 5) & 0x3F) * 4;
+            uint8_t b = (trail_color & 0x1F) * 8;
+            // Blend 60% with white
+            r = r + (255 - r) * 0.6;
+            g = g + (255 - g) * 0.6;
+            b = b + (255 - b) * 0.6;
+            // Convert back to RGB565
+            uint16_t light_color = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+
+            tft.fillCircle(trails[i].x, trails[i].y, trails[i].radius, light_color);
+        }
+    }
+
+    // Draw current particles and update trails
     for (uint8_t i = 0; i < g_activeGrainCount; i++) {
         uint8_t grain_idx = g_activeGrainIndices[i];
         Grain& grain = g_grains[grain_idx];
@@ -1579,7 +1608,28 @@ void drawParticleVisualizer() {
         }
 
         // Draw particle (filled circle)
-        tft.fillCircle(x, y, size / 2, color);
+        tft.fillCircle(x, y, particle_radius, color);
+
+        // Save current position as trail for next frame
+        trails[grain_idx].x = x;
+        trails[grain_idx].y = y;
+        trails[grain_idx].radius = particle_radius;
+        trails[grain_idx].color = color;
+        trails[grain_idx].valid = true;
+    }
+
+    // Invalidate trails for inactive grains
+    for (uint8_t i = 0; i < MAX_GRAINS; i++) {
+        bool is_active = false;
+        for (uint8_t j = 0; j < g_activeGrainCount; j++) {
+            if (g_activeGrainIndices[j] == i) {
+                is_active = true;
+                break;
+            }
+        }
+        if (!is_active) {
+            trails[i].valid = false;
+        }
     }
 }
 
