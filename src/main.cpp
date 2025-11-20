@@ -124,10 +124,10 @@ constexpr int UI_TRIGGER_LED_RADIUS = 4;
 constexpr unsigned long UI_TRIGGER_LED_DURATION_MS = 50;
 
 // Particle Visualizer Constants
-constexpr int VIZ_AREA_Y_START = 115;  // Moved down 20px total
+constexpr int VIZ_AREA_Y_START = 95;   // BPM/Grain display: below parameter area
 constexpr int VIZ_INFO_HEIGHT = 15;
-constexpr int VIZ_PARTICLE_Y_START = VIZ_AREA_Y_START + VIZ_INFO_HEIGHT;
-constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 28;  // Leave space for buffer bar (moved down)
+constexpr int VIZ_PARTICLE_Y_START = 145;  // Particle area: moved down independently
+constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 28;  // Leave space for buffer bar
 constexpr int VIZ_BUFFER_BAR_AREA_Y = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT + 2;  // y=214
 constexpr int VIZ_BUFFER_BAR_HEIGHT = 6;  // Half height (was 12)
 constexpr int VIZ_BUFFER_BAR_WIDTH = 320;  // Full width (restored)
