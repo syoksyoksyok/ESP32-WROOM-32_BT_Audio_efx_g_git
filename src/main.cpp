@@ -1534,20 +1534,22 @@ void drawParticleVisualizer() {
         uint16_t buffer_pos = (grain.startPos + current_pos) & GRAIN_BUFFER_MASK;
         int x = (buffer_pos * 320) / GRAIN_BUFFER_SIZE;
 
-        // Calculate Y position (pitch: speed_q16 mapped to Y axis)
-        // speed_q16: 1<<16 = normal pitch (center)
-        // Map to VIZ_PARTICLE_Y_START to VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT
-        int32_t pitch_offset = grain.speed_q16 - (1 << 16);  // Offset from center
-        int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
-        int y = y_center - (pitch_offset >> 12);  // Scale down for display
-        y = constrain(y, VIZ_PARTICLE_Y_START + 2, VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 2);
-
-        // Calculate particle size (envelope progress)
+        // Calculate particle size (envelope progress) - calculate first
         float progress = (float)current_pos / grain.length;
         // Use Hann window for size (larger in middle, smaller at edges)
         float envelope = 0.5f * (1.0f - cosf(2.0f * PI * progress));
         int size = VIZ_PARTICLE_MIN_SIZE + (int)(envelope * (VIZ_PARTICLE_MAX_SIZE - VIZ_PARTICLE_MIN_SIZE));
         size = constrain(size, VIZ_PARTICLE_MIN_SIZE, VIZ_PARTICLE_MAX_SIZE);
+        int particle_radius = size / 2;
+
+        // Calculate Y position (pitch: speed_q16 mapped to Y axis)
+        // speed_q16: 1<<16 = normal pitch (center)
+        // Constrain Y to keep particle fully within bounds (considering radius)
+        int32_t pitch_offset = grain.speed_q16 - (1 << 16);  // Offset from center
+        int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
+        int y = y_center - (pitch_offset >> 12);  // Scale down for display
+        y = constrain(y, VIZ_PARTICLE_Y_START + particle_radius,
+                      VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - particle_radius);
 
         // Calculate color (progress-based gradient)
         uint16_t color;
