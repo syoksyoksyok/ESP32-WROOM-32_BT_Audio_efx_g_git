@@ -95,10 +95,10 @@ constexpr int16_t PAN_CENTER_Q15 = 23170;  // ~0.707 in Q15 format for center pa
 // SECTION: Audio Engine Constants
 // ================================================================= //
 constexpr int RING_BUFFER_SIZE = 4096;
-#define GRAIN_BUFFER_SIZE 32768   // 64KB (WROOM-32 has no PSRAM, 16 grains limit)
-#define MAX_GRAIN_SIZE    32768   // Max ~0.74 seconds (44.1kHz stereo)
+#define GRAIN_BUFFER_SIZE 49152   // 96KB (WROOM-32 has no PSRAM, 12 grains limit)
+#define MAX_GRAIN_SIZE    49152   // Max ~1.11 seconds (44.1kHz stereo)
 #define GRAIN_BUFFER_MASK (GRAIN_BUFFER_SIZE - 1)
-constexpr int MAX_GRAINS = 16;  // Increased for richer polyphony
+constexpr int MAX_GRAINS = 12;  // Reduced for longer grain length
 constexpr int MIN_GRAIN_SIZE = 512;  // Min ~11.6ms (was 128)
 constexpr int FEEDBACK_BUFFER_SIZE = 512;
 constexpr int I2S_BUFFER_SAMPLES = 128;
@@ -1629,10 +1629,10 @@ void drawParticleVisualizer() {
             tft.drawFastVLine(tick_x, bar_y - 2, 2, TFT_WHITE);
         }
 
-        // Draw buffer info text (32768 samples / ~0.74s) - white text on black background
+        // Draw buffer info text (49152 samples / ~1.11s) - white text on black background
         tft.setTextColor(TFT_WHITE, TFT_BLACK);
         tft.setCursor(70, VIZ_BUFFER_BAR_AREA_Y + VIZ_BUFFER_BAR_HEIGHT + 11);
-        tft.print("Buf:32768smp/743ms");
+        tft.print("Buf:49152smp/1.11s");
 
         buffer_bar_initialized = true;
     }
@@ -1709,7 +1709,7 @@ void drawParticleVisualizer() {
         // Keep particle within bounds
         y = constrain(y, VIZ_PARTICLE_Y_START, VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1);
 
-        // Calculate color based on grain index (16 distinct colors)
+        // Calculate color based on grain index (12 distinct colors)
         // Each grain gets its own color for easy identification
         static const uint16_t grain_colors[MAX_GRAINS] = {
             TFT_RED,      // Grain 0: Red
@@ -1723,11 +1723,7 @@ void drawParticleVisualizer() {
             0xFC18,       // Grain 8: Pink (RGB565: 255,128,192)
             TFT_WHITE,    // Grain 9: White
             0x5D9B,       // Grain 10: Light Blue (RGB565: 90,180,220)
-            0x87E0,       // Grain 11: Lime (RGB565: 135,255,0)
-            0xFEA0,       // Grain 12: Gold (RGB565: 255,215,0)
-            TFT_SKYBLUE,  // Grain 13: Sky Blue
-            0xFBEA,       // Grain 14: Coral (RGB565: 255,127,80)
-            0xE71C        // Grain 15: Lavender (RGB565: 230,230,250)
+            0x87E0        // Grain 11: Lime (RGB565: 135,255,0)
         };
 
         uint16_t base_color = grain_colors[grain_idx];
