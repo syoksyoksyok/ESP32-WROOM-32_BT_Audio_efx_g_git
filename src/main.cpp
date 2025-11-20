@@ -46,7 +46,7 @@ constexpr int BPM_LED_PIN = 2;
 // SECTION: System & Timing Constants
 // ================================================================= //
 constexpr unsigned long ADC_UPDATE_INTERVAL_MS = 55;
-constexpr unsigned long DISPLAY_UPDATE_INTERVAL_MS = 33;
+constexpr unsigned long DISPLAY_UPDATE_INTERVAL_MS = 16;  // 60fps (was 33ms/30fps)
 constexpr unsigned long BUTTON_LONG_PRESS_MS = 800;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 15;
 constexpr unsigned long RANDOMIZE_FLASH_DURATION_MS = 200;
@@ -98,7 +98,7 @@ constexpr int RING_BUFFER_SIZE = 4096;
 #define GRAIN_BUFFER_SIZE 32768
 #define MAX_GRAIN_SIZE    32768
 #define GRAIN_BUFFER_MASK (GRAIN_BUFFER_SIZE - 1)
-constexpr int MAX_GRAINS = 6;
+constexpr int MAX_GRAINS = 10;  // Increased from 6 for richer visuals
 constexpr int MIN_GRAIN_SIZE = 128;
 constexpr int FEEDBACK_BUFFER_SIZE = 512;
 constexpr int I2S_BUFFER_SAMPLES = 128;
@@ -117,11 +117,23 @@ constexpr int UI_BAR_HEIGHT = 8;
 #define TFT_SKYBLUE 0x5D9B
 #define TFT_AQUA 0x07FF
 #define TFT_LIGHTBLUE 0xAFDF
-#define GET_VISUALIZER_BG_COLOR() (g_inverse_mode ? TFT_WHITE : TFT_BLACK)
+#define GET_VISUALIZER_BG_COLOR() TFT_WHITE  // Visualizer area always white background
 constexpr int UI_TRIGGER_LED_X = 310;
 constexpr int UI_TRIGGER_LED_Y = 10;
 constexpr int UI_TRIGGER_LED_RADIUS = 4;
 constexpr unsigned long UI_TRIGGER_LED_DURATION_MS = 50;
+
+// Particle Visualizer Constants
+constexpr int VIZ_AREA_Y_START = 95;
+constexpr int VIZ_INFO_HEIGHT = 15;
+constexpr int VIZ_PARTICLE_Y_START = VIZ_AREA_Y_START + VIZ_INFO_HEIGHT;
+constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 48;  // Leave space for buffer bar
+constexpr int VIZ_BUFFER_BAR_AREA_Y = VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT + 2;  // y=192
+constexpr int VIZ_BUFFER_BAR_HEIGHT = 6;  // Half height (was 12)
+constexpr int VIZ_BUFFER_BAR_WIDTH = 320;  // Full width (restored)
+constexpr int VIZ_BUFFER_BAR_X_OFFSET = 0;  // Left aligned
+constexpr int VIZ_PARTICLE_MAX_SIZE = 20;  // 2.5x larger (was 8)
+constexpr int VIZ_PARTICLE_MIN_SIZE = 5;   // 2.5x larger (was 2)
 // ================================================================= //
 // SECTION: Look-Up Table (LUT) Sizes
 // ================================================================= //
@@ -348,12 +360,12 @@ void updateTriggerLED();
 void drawUiFrame();
 void drawParameterBar(int x, int y, int16_t val, int16_t& lastVal, uint16_t color);
 void drawPitchBar(int x, int y, float val, float& lastVal, uint16_t color);
+void drawParticleVisualizer();
 void initAllLuts();
 const char* getModeString(PlayMode mode);
 const char* getPot4ModeString(Pot4Mode mode);
 bool handleButtonDebounce(ButtonState& b, int pin);
 void invalidateDisplayCache();
-// ★ 追加：新しい関数の前方宣言
 
 // ================================================================= //
 // SECTION: Main Setup & Loop
@@ -1298,12 +1310,7 @@ void updateDisplay() {
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 1, g_params.size_q15, g_display_cache.size_q15, TFT_SKYBLUE);
     drawParameterBar(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 1, g_params.dryWet_q15, g_display_cache.dryWet_q15, TFT_LIGHTBLUE);
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 2, g_params.deja_vu_q15, g_display_cache.deja_vu_q15, TFT_SKYBLUE);
-    if (g_activeGrainCount != g_display_cache.active_grains) {
-        g_display_cache.active_grains = g_activeGrainCount;
-        tft.fillRect(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 2, 60, 10, bg_color);
-        tft.setCursor(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 2 + 2);
-        tft.printf("%d/%d", g_activeGrainCount, MAX_GRAINS);
-    }
+    // Note: Grain count moved to visualizer area
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3, g_params.texture_q15, g_display_cache.texture_q15, TFT_AQUA);
     drawParameterBar(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3, g_params.stereoSpread_q15, g_display_cache.stereoSpread_q15, TFT_AQUA);
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 4, g_params.feedback_q15, g_display_cache.feedback_q15, TFT_AQUA);
@@ -1340,16 +1347,27 @@ void updateDisplay() {
         tft.setCursor(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 6 + 2);
         tft.print(getPot4ModeString(g_pot4_mode));
     }
+    // Compact BPM display (white background, black text)
     if (abs(g_current_bpm - g_display_cache.bpm) > 0.1f) {
         g_display_cache.bpm = g_current_bpm;
-        tft.fillRect(0, 120, 320, 80, bg_color);
-        tft.setTextColor(txt_color, bg_color);
-        tft.setTextSize(3);
-        tft.setTextDatum(MC_DATUM);
-        tft.drawFloat(g_current_bpm, 1, 160, 160);
+        tft.fillRect(5, VIZ_AREA_Y_START + 2, 80, 10, TFT_WHITE);
+        tft.setTextColor(TFT_BLACK, TFT_WHITE);
         tft.setTextSize(1);
-        tft.setTextDatum(TL_DATUM);
+        tft.setCursor(5, VIZ_AREA_Y_START + 2);
+        tft.printf("%.1fBPM", g_current_bpm);
     }
+
+    // Grain count display (white background, black text)
+    if (g_activeGrainCount != g_display_cache.active_grains) {
+        g_display_cache.active_grains = g_activeGrainCount;
+        tft.fillRect(240, VIZ_AREA_Y_START + 2, 75, 10, TFT_WHITE);
+        tft.setTextColor(TFT_BLACK, TFT_WHITE);
+        tft.setCursor(240, VIZ_AREA_Y_START + 2);
+        tft.printf("%d/%dgrn", g_activeGrainCount, MAX_GRAINS);
+    }
+
+    // Draw particle visualizer
+    drawParticleVisualizer();
 
     // Update trigger LED animation
     updateTriggerLED();
@@ -1366,7 +1384,7 @@ void drawUiFrame() {
     tft.setTextSize(1);
     tft.setTextColor(text_color, bg_color);
     const char* labels1[] = {"POS", "SIZ", "DEJA", "TEX", "FBK", "CLK", "LOOP"};
-    const char* labels2[] = {"PIT", "MIX", "GRNS", "SPR", "MODE", "BT", "POT4"};
+    const char* labels2[] = {"PIT", "MIX", "", "SPR", "MODE", "BT", "POT4"};
     for (int i = 0; i < 7; i++) {
         tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * i + 2);
         tft.print(labels1[i]);
@@ -1380,6 +1398,9 @@ void drawUiFrame() {
     tft.fillRect(0, UI_SEPARATOR_Y_NEW + 1, 320, 240 - (UI_SEPARATOR_Y_NEW + 1),
                  GET_VISUALIZER_BG_COLOR());
     tft.drawCircle(UI_TRIGGER_LED_X, UI_TRIGGER_LED_Y, UI_TRIGGER_LED_RADIUS, TFT_DARKGREY);
+
+    // Draw visualizer separator line
+    tft.drawLine(0, VIZ_PARTICLE_Y_START - 1, 320, VIZ_PARTICLE_Y_START - 1, line_color);
 }
 
 void drawParameterBar(int x, int y, int16_t val, int16_t& lastVal, uint16_t color) {
@@ -1438,6 +1459,179 @@ void drawPitchBar(int x, int y, float val, float& lastVal, uint16_t color) {
     lastVal = val;
 }
 
+
+// ================================================================= //
+// SECTION: Particle Visualizer
+// ================================================================= //
+void drawParticleVisualizer() {
+    static uint16_t last_write_pos = 0xFFFF;
+    static bool buffer_bar_initialized = false;
+    uint16_t bg_color = g_inverse_mode ? TFT_WHITE : TFT_BLACK;
+    uint16_t fg_color = g_inverse_mode ? TFT_BLACK : TFT_WHITE;
+
+    // Clear particle area every frame for smooth animation (white background)
+    tft.fillRect(0, VIZ_PARTICLE_Y_START, 320, VIZ_PARTICLE_HEIGHT, TFT_WHITE);
+
+    // Draw enhanced buffer progress bar at bottom
+    if (!buffer_bar_initialized || last_write_pos != g_grainWritePos) {
+        // Clear buffer bar area with white background
+        tft.fillRect(0, VIZ_BUFFER_BAR_AREA_Y, 320, 48, TFT_WHITE);
+
+        // Draw scale markers (0%, 25%, 50%, 75%, 100%) - black text on white
+        tft.setTextSize(1);
+        tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+        tft.setCursor(0, VIZ_BUFFER_BAR_AREA_Y);
+        tft.print("0");
+        tft.setCursor(75, VIZ_BUFFER_BAR_AREA_Y);
+        tft.print("25");
+        tft.setCursor(155, VIZ_BUFFER_BAR_AREA_Y);
+        tft.print("50");
+        tft.setCursor(235, VIZ_BUFFER_BAR_AREA_Y);
+        tft.print("75");
+        tft.setCursor(302, VIZ_BUFFER_BAR_AREA_Y);
+        tft.print("100%");
+
+        int bar_y = VIZ_BUFFER_BAR_AREA_Y + 8;
+
+        // Draw segmented buffer bar (battery-style with purple segments)
+        constexpr int SEGMENT_COUNT = 32;
+        constexpr int SEGMENT_WIDTH = 9;
+        constexpr int SEGMENT_GAP = 1;
+        constexpr int SEGMENT_TOTAL_WIDTH = SEGMENT_WIDTH + SEGMENT_GAP;
+
+        // Calculate how many segments to fill based on buffer progress
+        int filled_segments = (g_grainWritePos * SEGMENT_COUNT) / GRAIN_BUFFER_SIZE;
+
+        // Draw each segment
+        for (int i = 0; i < SEGMENT_COUNT; i++) {
+            int seg_x = i * SEGMENT_TOTAL_WIDTH;
+
+            if (i < filled_segments) {
+                // Filled segment (purple)
+                tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_PURPLE);
+            } else {
+                // Empty segment (light gray on white background)
+                tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_LIGHTGREY);
+            }
+        }
+
+        // Draw current write position marker (red line)
+        int x_pos = (g_grainWritePos * (SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH)) / GRAIN_BUFFER_SIZE;
+        tft.fillRect(x_pos - 1, bar_y, 2, VIZ_BUFFER_BAR_HEIGHT, TFT_RED);
+
+        // Draw tick marks at 25% intervals (black on white)
+        for (int i = 0; i <= 4; i++) {
+            int tick_x = (i * SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH) / 4;
+            tft.drawFastVLine(tick_x, bar_y - 2, 2, TFT_BLACK);
+        }
+
+        // Draw border around entire bar area (black on white)
+        tft.drawRect(0, bar_y, SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_BLACK);
+
+        // Draw buffer info text (32768 samples / ~743ms) - black text on white background
+        tft.setTextColor(TFT_BLACK, TFT_WHITE);
+        tft.setCursor(80, VIZ_BUFFER_BAR_AREA_Y + VIZ_BUFFER_BAR_HEIGHT + 11);
+        tft.print("Buf:32768smp/743ms");
+
+        last_write_pos = g_grainWritePos;
+        buffer_bar_initialized = true;
+    }
+
+    // Trail effect: store previous particle positions
+    struct ParticleTrail {
+        int x, y, radius;
+        uint16_t color;
+        bool valid;
+    };
+    static ParticleTrail trails[MAX_GRAINS] = {};
+
+    // Draw trails (previous frame particles with lighter color)
+    for (uint8_t i = 0; i < MAX_GRAINS; i++) {
+        if (trails[i].valid) {
+            // Make trail color lighter (blend with white)
+            uint16_t trail_color = trails[i].color;
+            // Extract RGB components from RGB565
+            uint8_t r = ((trail_color >> 11) & 0x1F) * 8;
+            uint8_t g = ((trail_color >> 5) & 0x3F) * 4;
+            uint8_t b = (trail_color & 0x1F) * 8;
+            // Blend 60% with white
+            r = r + (255 - r) * 0.6;
+            g = g + (255 - g) * 0.6;
+            b = b + (255 - b) * 0.6;
+            // Convert back to RGB565
+            uint16_t light_color = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+
+            tft.fillCircle(trails[i].x, trails[i].y, trails[i].radius, light_color);
+        }
+    }
+
+    // Draw current particles and update trails
+    for (uint8_t i = 0; i < g_activeGrainCount; i++) {
+        uint8_t grain_idx = g_activeGrainIndices[i];
+        Grain& grain = g_grains[grain_idx];
+
+        if (!grain.active) continue;
+
+        // Calculate X position (buffer position: 0-320)
+        uint16_t current_pos = grain.position_q16 >> 16;
+        uint16_t buffer_pos = (grain.startPos + current_pos) & GRAIN_BUFFER_MASK;
+        int x = (buffer_pos * 320) / GRAIN_BUFFER_SIZE;
+
+        // Calculate particle size (envelope progress) - calculate first
+        float progress = (float)current_pos / grain.length;
+        // Use Hann window for size (larger in middle, smaller at edges)
+        float envelope = 0.5f * (1.0f - cosf(2.0f * PI * progress));
+        int size = VIZ_PARTICLE_MIN_SIZE + (int)(envelope * (VIZ_PARTICLE_MAX_SIZE - VIZ_PARTICLE_MIN_SIZE));
+        size = constrain(size, VIZ_PARTICLE_MIN_SIZE, VIZ_PARTICLE_MAX_SIZE);
+        int particle_radius = size / 2;
+
+        // Calculate Y position (pitch: speed_q16 mapped to Y axis)
+        // speed_q16: 1<<16 = normal pitch (center)
+        // Constrain Y to keep particle fully within bounds (considering radius)
+        int32_t pitch_offset = grain.speed_q16 - (1 << 16);  // Offset from center
+        int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
+        int y = y_center - (pitch_offset >> 12);  // Scale down for display
+        y = constrain(y, VIZ_PARTICLE_Y_START + particle_radius,
+                      VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - particle_radius);
+
+        // Calculate color (progress-based gradient)
+        uint16_t color;
+        if (progress < 0.33f) {
+            // Start: Cyan to Yellow
+            color = TFT_CYAN;
+        } else if (progress < 0.66f) {
+            // Middle: Yellow to Magenta
+            color = TFT_YELLOW;
+        } else {
+            // End: Magenta to Red
+            color = TFT_MAGENTA;
+        }
+
+        // Draw particle (filled circle)
+        tft.fillCircle(x, y, particle_radius, color);
+
+        // Save current position as trail for next frame
+        trails[grain_idx].x = x;
+        trails[grain_idx].y = y;
+        trails[grain_idx].radius = particle_radius;
+        trails[grain_idx].color = color;
+        trails[grain_idx].valid = true;
+    }
+
+    // Invalidate trails for inactive grains
+    for (uint8_t i = 0; i < MAX_GRAINS; i++) {
+        bool is_active = false;
+        for (uint8_t j = 0; j < g_activeGrainCount; j++) {
+            if (g_activeGrainIndices[j] == i) {
+                is_active = true;
+                break;
+            }
+        }
+        if (!is_active) {
+            trails[i].valid = false;
+        }
+    }
+}
 
 // ================================================================= //
 // SECTION: Initialization & Helpers
