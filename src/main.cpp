@@ -658,10 +658,27 @@ void handleDejaVuTrigger() {
         g_deja_vu_buffer[current_step_in_loop] = params_to_use;
     }
 
-    for (int i = 0; i < MAX_GRAINS; i++) {
+    // Generate 1-3 grains per trigger for richer polyphony
+    uint8_t grains_to_generate = 1 + (esp_random() % 3);  // Random 1-3
+    uint8_t grains_generated = 0;
+
+    for (int i = 0; i < MAX_GRAINS && grains_generated < grains_to_generate; i++) {
         if (!g_grains[i].active) {
-            triggerGrain(i, params_to_use);
-            break;
+            // Add slight variation to each grain for richer sound
+            ParamSnapshot varied_params = params_to_use;
+
+            if (grains_generated > 0) {
+                // Add small pitch variation (±2 semitones)
+                int16_t pitch_var = (esp_random() % 4001) - 2000;  // -2000 to +2000
+                varied_params.pitch_f = params_to_use.pitch_f + (pitch_var / 1000.0f);
+
+                // Add small position variation
+                int16_t pos_var = (esp_random() % 6553) - 3276;  // ±10% of range
+                varied_params.position_q15 = constrain(params_to_use.position_q15 + pos_var, 0, 32767);
+            }
+
+            triggerGrain(i, varied_params);
+            grains_generated++;
         }
     }
 
