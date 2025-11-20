@@ -661,8 +661,19 @@ void handleDejaVuTrigger() {
         g_deja_vu_buffer[current_step_in_loop] = params_to_use;
     }
 
-    // Generate 1-3 grains per trigger for richer polyphony
-    uint8_t grains_to_generate = 1 + (esp_random() % 3);  // Random 1-3
+    // Generate grains per trigger - more grains at higher pitches
+    uint8_t base_grains = 1;
+    uint8_t max_grains = 3;
+
+    // Increase grain count for positive pitch (faster playback needs more grains)
+    if (params_to_use.pitch_f > 0.0f) {
+        // pitch_f: 0 to +24 semitones
+        float pitch_factor = params_to_use.pitch_f / 24.0f;  // 0.0 ~ 1.0
+        max_grains = 3 + (uint8_t)(pitch_factor * 4.0f);  // 3 to 7 grains
+        // Examples: pitch=0 -> max 3, pitch=+12 -> max 5, pitch=+24 -> max 7
+    }
+
+    uint8_t grains_to_generate = base_grains + (esp_random() % max_grains);
     uint8_t grains_generated = 0;
 
     for (int i = 0; i < MAX_GRAINS && grains_generated < grains_to_generate; i++) {
