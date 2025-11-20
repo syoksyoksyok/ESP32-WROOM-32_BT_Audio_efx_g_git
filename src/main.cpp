@@ -46,7 +46,7 @@ constexpr int BPM_LED_PIN = 2;
 // SECTION: System & Timing Constants
 // ================================================================= //
 constexpr unsigned long ADC_UPDATE_INTERVAL_MS = 55;
-constexpr unsigned long DISPLAY_UPDATE_INTERVAL_MS = 16;  // 60fps (was 33ms/30fps)
+constexpr unsigned long DISPLAY_UPDATE_INTERVAL_MS = 33;  // 30fps (reduce flicker)
 constexpr unsigned long BUTTON_LONG_PRESS_MS = 800;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 15;
 constexpr unsigned long RANDOMIZE_FLASH_DURATION_MS = 200;
@@ -1685,30 +1685,23 @@ void drawParticleVisualizer() {
         }
     }
 
-    // Draw pitch scale labels AFTER particles (to prevent color residue)
-    // Clear label areas with extra space to account for particle radius (10px)
+    // Draw pitch scale labels (simple, with background color to cover particles)
     tft.setTextSize(1);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
-    // Clear and draw left side labels (expanded clear area for particle radius)
-    tft.fillRect(0, y_top - 5, 25, 18, TFT_BLACK);  // Expanded: -5 to +13 vertically, 25px wide
+    // Left side labels
     tft.setCursor(2, y_top);
     tft.print("+24");
-    tft.fillRect(0, y_center - 9, 20, 18, TFT_BLACK);  // Expanded: -9 to +9 vertically
     tft.setCursor(2, y_center - 4);
     tft.print(" 0");
-    tft.fillRect(0, y_bottom - 13, 25, 18, TFT_BLACK);  // Expanded: -13 to +5 vertically, 25px wide
     tft.setCursor(2, y_bottom - 8);
     tft.print("-24");
 
-    // Clear and draw right side labels (expanded clear area for particle radius)
-    tft.fillRect(295, y_top - 5, 25, 18, TFT_BLACK);  // Expanded
+    // Right side labels
     tft.setCursor(302, y_top);
     tft.print("+24");
-    tft.fillRect(300, y_center - 9, 20, 18, TFT_BLACK);  // Expanded
     tft.setCursor(302, y_center - 4);
     tft.print(" 0");
-    tft.fillRect(295, y_bottom - 13, 25, 18, TFT_BLACK);  // Expanded
     tft.setCursor(302, y_bottom - 8);
     tft.print("-24");
 }
