@@ -210,11 +210,13 @@ struct Grain {
     int32_t position_q16, speed_q16;
     uint32_t reciprocal_length_q32;
     int16_t panL_q15, panR_q15;
+    float pitch_f;  // Store pitch for accurate visualization
     void reset() {
         active = false;
         position_q16 = 0;
         speed_q16 = 1 << 16;
         reciprocal_length_q32 = 0; panL_q15 = PAN_CENTER_Q15; panR_q15 = PAN_CENTER_Q15;
+        pitch_f = 0.0f;
     }
 };
 struct GranParams {
@@ -742,6 +744,7 @@ void triggerGrain(int idx, const ParamSnapshot& params) {
     g.length = calculateGrainLength(params.size_q15, params.texture_q15);
     g.startPos = calculateGrainStartPosition(params.position_q15, params.texture_q15);
     g.speed_q16 = calculateGrainSpeed(params.pitch_f, params.texture_q15);
+    g.pitch_f = params.pitch_f;  // Store pitch for visualization
     calculateGrainPanning(g.panL_q15, g.panR_q15);
     g.position_q16 = (g_params.mode == MODE_REVERSE) ? (int32_t)(g.length - 1) << 16 : 0;
     uint16_t lut_idx = ((g.length - MIN_GRAIN_SIZE) * (RECIPROCAL_LUT_SIZE - 1)) / (MAX_GRAIN_SIZE - MIN_GRAIN_SIZE);
@@ -1640,14 +1643,14 @@ void drawParticleVisualizer() {
         size = constrain(size, VIZ_PARTICLE_MIN_SIZE, VIZ_PARTICLE_MAX_SIZE);
         int particle_radius = size / 2;
 
-        // Calculate Y position (pitch: speed_q16 mapped to Y axis)
-        // speed_q16: 1<<16 = normal pitch (center)
-        // Constrain Y to keep particle fully within bounds (considering radius)
-        int32_t pitch_offset = grain.speed_q16 - (1 << 16);  // Offset from center
+        // Calculate Y position (pitch: -24 to +24 semitones mapped to Y axis)
+        // pitch_f = +24 -> top (VIZ_PARTICLE_Y_START)
+        // pitch_f = 0   -> center
+        // pitch_f = -24 -> bottom (VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1)
         int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
-        int y = y_center - (pitch_offset >> 12);  // Scale down for display
-        y = constrain(y, VIZ_PARTICLE_Y_START + particle_radius,
-                      VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - particle_radius);
+        int y = y_center - (int)((grain.pitch_f / 24.0f) * (VIZ_PARTICLE_HEIGHT / 2));
+        // Keep particle within bounds (allow it to touch edges)
+        y = constrain(y, VIZ_PARTICLE_Y_START, VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 1);
 
         // Calculate color (progress-based gradient)
         uint16_t color;
