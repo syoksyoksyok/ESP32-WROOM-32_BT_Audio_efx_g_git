@@ -95,8 +95,8 @@ constexpr int16_t PAN_CENTER_Q15 = 23170;  // ~0.707 in Q15 format for center pa
 // SECTION: Audio Engine Constants
 // ================================================================= //
 constexpr int RING_BUFFER_SIZE = 4096;
-#define GRAIN_BUFFER_SIZE 131072  // 256KB buffer (was 32768)
-#define MAX_GRAIN_SIZE    131072  // Max ~3 seconds (was 65536)
+#define GRAIN_BUFFER_SIZE 32768   // 64KB (WROOM-32 has no PSRAM)
+#define MAX_GRAIN_SIZE    32768   // Max ~0.74 seconds (limited by buffer)
 #define GRAIN_BUFFER_MASK (GRAIN_BUFFER_SIZE - 1)
 constexpr int MAX_GRAINS = 10;  // Increased from 6 for richer visuals
 constexpr int MIN_GRAIN_SIZE = 512;  // Min ~11.6ms (was 128)
@@ -254,7 +254,7 @@ BluetoothA2DPSink a2dp_sink;
 bool g_inverse_mode = false;
 // Audio Buffers
 AudioRingBuffer g_ringBuffer;
-EXT_RAM_ATTR int16_t g_grainBuffer[GRAIN_BUFFER_SIZE];  // Place large buffer in PSRAM
+int16_t g_grainBuffer[GRAIN_BUFFER_SIZE];  // 64KB buffer in internal DRAM
 volatile uint16_t g_grainWritePos = 0;
 bool g_grainBufferReady = false;
 
