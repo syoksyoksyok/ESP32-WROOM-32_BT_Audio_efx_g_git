@@ -96,10 +96,10 @@ constexpr int16_t PAN_CENTER_Q15 = 23170;  // ~0.707 in Q15 format for center pa
 // ================================================================= //
 constexpr int RING_BUFFER_SIZE = 4096;
 #define GRAIN_BUFFER_SIZE 32768
-#define MAX_GRAIN_SIZE    32768
+#define MAX_GRAIN_SIZE    65536  // Max ~1.5 seconds (was 32768)
 #define GRAIN_BUFFER_MASK (GRAIN_BUFFER_SIZE - 1)
 constexpr int MAX_GRAINS = 10;  // Increased from 6 for richer visuals
-constexpr int MIN_GRAIN_SIZE = 128;
+constexpr int MIN_GRAIN_SIZE = 512;  // Min ~11.6ms (was 128)
 constexpr int FEEDBACK_BUFFER_SIZE = 512;
 constexpr int I2S_BUFFER_SAMPLES = 128;
 constexpr int DEJA_VU_BUFFER_SIZE = 16;
