@@ -715,7 +715,8 @@ void randomizeDejaVuBuffer() {
     g_params.size_q15         = 1000 + (esp_random() % 31767);
     g_params.deja_vu_q15      = esp_random() % 32768;
     g_params.texture_q15      = esp_random() % 32768;
-    g_params.stereoSpread_q15 = esp_random() % 32768;
+    // SPR: 70-90% range (22937-29490)
+    g_params.stereoSpread_q15 = 22937 + (esp_random() % 6554);
     g_params.feedback_q15     = g_feedback_lut_q15[esp_random() % FEEDBACK_LUT_SIZE];
     g_params.dryWet_q15       = 32767;
 
@@ -983,7 +984,8 @@ void initializeSnapshots() {
         g_snapshots[i].size_q15         = 1000 + (esp_random() % 31767);
         g_snapshots[i].deja_vu_q15      = esp_random() % 32768;
         g_snapshots[i].texture_q15      = esp_random() % 32768;
-        g_snapshots[i].stereoSpread_q15 = esp_random() % 32768;
+        // SPR: 70-90% range (22937-29490)
+        g_snapshots[i].stereoSpread_q15 = 22937 + (esp_random() % 6554);
         g_snapshots[i].feedback_q15     = g_feedback_lut_q15[esp_random() % FEEDBACK_LUT_SIZE];
         // 0.0f～1.0fのランダムなfloatを生成し、pitch範囲に変換する
         float random_float = (float)esp_random() / (float)UINT32_MAX;
@@ -1589,11 +1591,9 @@ void drawParticleVisualizer() {
         }
     }
 
-    // Draw enhanced buffer progress bar at bottom
-    constexpr int SEGMENT_COUNT = 80;  // More segments for finer granularity (was 32)
-    constexpr int SEGMENT_WIDTH = 3;   // Thinner segments (was 9)
-    constexpr int SEGMENT_GAP = 1;
-    constexpr int SEGMENT_TOTAL_WIDTH = SEGMENT_WIDTH + SEGMENT_GAP;
+    // Draw buffer progress bar at bottom (solid bar style)
+    constexpr int BAR_X = 2;
+    constexpr int BAR_WIDTH = 316;  // 320 - 4 for margins
     int bar_y = VIZ_BUFFER_BAR_AREA_Y + 8;
 
     // Initialize buffer bar area once
@@ -1615,20 +1615,17 @@ void drawParticleVisualizer() {
         tft.setCursor(302, VIZ_BUFFER_BAR_AREA_Y);
         tft.print("100%");
 
-        // Draw all segments initially (all empty)
-        for (int i = 0; i < SEGMENT_COUNT; i++) {
-            int seg_x = i * SEGMENT_TOTAL_WIDTH;
-            tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_LIGHTGREY);
-        }
+        // Draw empty bar background (dark gray)
+        tft.fillRect(BAR_X, bar_y, BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_DARKGREY);
 
-        // Draw tick marks at 25% intervals (white on black)
+        // Draw border around bar
+        tft.drawRect(BAR_X, bar_y, BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_WHITE);
+
+        // Draw tick marks at 25% intervals
         for (int i = 0; i <= 4; i++) {
-            int tick_x = (i * SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH) / 4;
+            int tick_x = BAR_X + (i * BAR_WIDTH) / 4;
             tft.drawFastVLine(tick_x, bar_y - 2, 2, TFT_WHITE);
         }
-
-        // Draw border around entire bar area
-        tft.drawRect(0, bar_y, SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_WHITE);
 
         // Draw buffer info text (32768 samples / ~743ms) - white text on black background
         tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -1638,42 +1635,38 @@ void drawParticleVisualizer() {
         buffer_bar_initialized = true;
     }
 
-    // Update only changed segments and position marker
+    // Update bar fill and position marker
     if (last_write_pos != g_grainWritePos) {
-        static int last_filled_segments = 0;
+        static int last_filled_width = 0;
         static int last_marker_x = 0;
 
-        // Calculate new filled segments
-        int filled_segments = (g_grainWritePos * SEGMENT_COUNT) / GRAIN_BUFFER_SIZE;
+        // Calculate filled width
+        int filled_width = (g_grainWritePos * BAR_WIDTH) / GRAIN_BUFFER_SIZE;
 
-        // Update only segments that changed state
-        if (filled_segments != last_filled_segments) {
-            int start_seg = min(last_filled_segments, filled_segments);
-            int end_seg = max(last_filled_segments, filled_segments);
-
-            for (int i = start_seg; i < end_seg; i++) {
-                int seg_x = i * SEGMENT_TOTAL_WIDTH;
-                if (i < filled_segments) {
-                    // Fill segment (white)
-                    tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_WHITE);
-                } else {
-                    // Empty segment (light gray)
-                    tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_LIGHTGREY);
-                }
+        // Update bar fill if changed
+        if (filled_width != last_filled_width) {
+            if (filled_width > last_filled_width) {
+                // Fill new area with white
+                tft.fillRect(BAR_X + last_filled_width, bar_y, filled_width - last_filled_width, VIZ_BUFFER_BAR_HEIGHT, TFT_WHITE);
+            } else {
+                // Clear area (back to dark gray)
+                tft.fillRect(BAR_X + filled_width, bar_y, last_filled_width - filled_width, VIZ_BUFFER_BAR_HEIGHT, TFT_DARKGREY);
             }
-            last_filled_segments = filled_segments;
+            last_filled_width = filled_width;
+
+            // Redraw border to ensure it's not overwritten
+            tft.drawRect(BAR_X, bar_y, BAR_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_WHITE);
         }
 
-        // Clear old position marker (restore segment color underneath)
+        // Clear old position marker (restore bar color underneath)
         if (last_marker_x > 0) {
-            int old_seg_idx = (last_marker_x * SEGMENT_COUNT) / (SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH);
-            uint16_t restore_color = (old_seg_idx < last_filled_segments) ? TFT_WHITE : TFT_LIGHTGREY;
-            tft.fillRect(last_marker_x - 1, bar_y, 2, VIZ_BUFFER_BAR_HEIGHT, restore_color);
+            uint16_t restore_color = (last_marker_x <= last_filled_width) ? TFT_WHITE : TFT_DARKGREY;
+            tft.drawFastVLine(last_marker_x, bar_y, VIZ_BUFFER_BAR_HEIGHT, restore_color);
         }
 
         // Draw new position marker (red line)
-        int x_pos = (g_grainWritePos * (SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH)) / GRAIN_BUFFER_SIZE;
-        tft.fillRect(x_pos - 1, bar_y, 2, VIZ_BUFFER_BAR_HEIGHT, TFT_RED);
+        int x_pos = BAR_X + filled_width;
+        tft.drawFastVLine(x_pos, bar_y, VIZ_BUFFER_BAR_HEIGHT, TFT_RED);
 
         last_marker_x = x_pos;
         last_write_pos = g_grainWritePos;
