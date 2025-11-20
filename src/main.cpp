@@ -1590,8 +1590,8 @@ void drawParticleVisualizer() {
     }
 
     // Draw enhanced buffer progress bar at bottom
-    constexpr int SEGMENT_COUNT = 32;
-    constexpr int SEGMENT_WIDTH = 9;
+    constexpr int SEGMENT_COUNT = 80;  // More segments for finer granularity (was 32)
+    constexpr int SEGMENT_WIDTH = 3;   // Thinner segments (was 9)
     constexpr int SEGMENT_GAP = 1;
     constexpr int SEGMENT_TOTAL_WIDTH = SEGMENT_WIDTH + SEGMENT_GAP;
     int bar_y = VIZ_BUFFER_BAR_AREA_Y + 8;
@@ -1654,8 +1654,8 @@ void drawParticleVisualizer() {
             for (int i = start_seg; i < end_seg; i++) {
                 int seg_x = i * SEGMENT_TOTAL_WIDTH;
                 if (i < filled_segments) {
-                    // Fill segment (purple)
-                    tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_PURPLE);
+                    // Fill segment (white)
+                    tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_WHITE);
                 } else {
                     // Empty segment (light gray)
                     tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_LIGHTGREY);
@@ -1667,7 +1667,7 @@ void drawParticleVisualizer() {
         // Clear old position marker (restore segment color underneath)
         if (last_marker_x > 0) {
             int old_seg_idx = (last_marker_x * SEGMENT_COUNT) / (SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH);
-            uint16_t restore_color = (old_seg_idx < last_filled_segments) ? TFT_PURPLE : TFT_LIGHTGREY;
+            uint16_t restore_color = (old_seg_idx < last_filled_segments) ? TFT_WHITE : TFT_LIGHTGREY;
             tft.fillRect(last_marker_x - 1, bar_y, 2, VIZ_BUFFER_BAR_HEIGHT, restore_color);
         }
 
