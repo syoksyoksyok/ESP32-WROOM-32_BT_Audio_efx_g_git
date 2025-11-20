@@ -117,7 +117,8 @@ constexpr int UI_BAR_HEIGHT = 8;
 #define TFT_SKYBLUE 0x5D9B
 #define TFT_AQUA 0x07FF
 #define TFT_LIGHTBLUE 0xAFDF
-#define GET_VISUALIZER_BG_COLOR() TFT_WHITE  // Visualizer area always white background
+#define TFT_VERYLIGHTGREY 0xE71C  // Soft gray background (R=28, G=56, B=28)
+#define GET_VISUALIZER_BG_COLOR() TFT_VERYLIGHTGREY  // Soft gray instead of pure white
 constexpr int UI_TRIGGER_LED_X = 310;
 constexpr int UI_TRIGGER_LED_Y = 10;
 constexpr int UI_TRIGGER_LED_RADIUS = 4;
@@ -1491,10 +1492,10 @@ void drawParticleVisualizer() {
     uint16_t fg_color = g_inverse_mode ? TFT_BLACK : TFT_WHITE;
 
     // Clear BPM/Grain display area to prevent particle color residue
-    tft.fillRect(0, VIZ_AREA_Y_START, 320, VIZ_INFO_HEIGHT, TFT_WHITE);
+    tft.fillRect(0, VIZ_AREA_Y_START, 320, VIZ_INFO_HEIGHT, TFT_VERYLIGHTGREY);
 
     // Redraw BPM and grain count every frame (to prevent particle residue)
-    tft.setTextColor(TFT_BLACK, TFT_WHITE);
+    tft.setTextColor(TFT_BLACK, TFT_VERYLIGHTGREY);
     tft.setTextSize(1);
     tft.setCursor(5, VIZ_AREA_Y_START + 2);
     tft.printf("%.1fBPM", g_current_bpm);
@@ -1505,12 +1506,12 @@ void drawParticleVisualizer() {
     uint16_t line_color = g_inverse_mode ? TFT_LIGHTGREY : TFT_DARKGREY;
     tft.drawLine(0, VIZ_SEPARATOR_LINE_Y, 320, VIZ_SEPARATOR_LINE_Y, line_color);
 
-    // Clear particle area every frame for smooth animation (white background)
+    // Clear particle area every frame for smooth animation (soft gray background)
     // Extend clear area to account for particle radius (max 10px)
     // Clear from separator line to buffer bar to prevent color residue
     int clear_y_start = VIZ_SEPARATOR_LINE_Y + 1;  // Just after separator line (y=113)
     int clear_height = VIZ_BUFFER_BAR_AREA_Y - clear_y_start - 1;  // Until buffer bar (y=213)
-    tft.fillRect(0, clear_y_start, 320, clear_height, TFT_WHITE);
+    tft.fillRect(0, clear_y_start, 320, clear_height, TFT_VERYLIGHTGREY);
 
     // Draw pitch scale on particle area
     int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
@@ -1524,12 +1525,12 @@ void drawParticleVisualizer() {
 
     // Draw enhanced buffer progress bar at bottom
     if (!buffer_bar_initialized || last_write_pos != g_grainWritePos) {
-        // Clear buffer bar area with white background
-        tft.fillRect(0, VIZ_BUFFER_BAR_AREA_Y, 320, 48, TFT_WHITE);
+        // Clear buffer bar area with soft gray background
+        tft.fillRect(0, VIZ_BUFFER_BAR_AREA_Y, 320, 48, TFT_VERYLIGHTGREY);
 
-        // Draw scale markers (0%, 25%, 50%, 75%, 100%) - black text on white
+        // Draw scale markers (0%, 25%, 50%, 75%, 100%) - black text on soft gray
         tft.setTextSize(1);
-        tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+        tft.setTextColor(TFT_DARKGREY, TFT_VERYLIGHTGREY);
         tft.setCursor(0, VIZ_BUFFER_BAR_AREA_Y);
         tft.print("0");
         tft.setCursor(75, VIZ_BUFFER_BAR_AREA_Y);
@@ -1575,11 +1576,11 @@ void drawParticleVisualizer() {
             tft.drawFastVLine(tick_x, bar_y - 2, 2, TFT_BLACK);
         }
 
-        // Draw border around entire bar area (black on white)
+        // Draw border around entire bar area
         tft.drawRect(0, bar_y, SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_BLACK);
 
-        // Draw buffer info text (32768 samples / ~743ms) - black text on white background
-        tft.setTextColor(TFT_BLACK, TFT_WHITE);
+        // Draw buffer info text (32768 samples / ~743ms) - black text on soft gray background
+        tft.setTextColor(TFT_BLACK, TFT_VERYLIGHTGREY);
         tft.setCursor(80, VIZ_BUFFER_BAR_AREA_Y + VIZ_BUFFER_BAR_HEIGHT + 11);
         tft.print("Buf:32768smp/743ms");
 
@@ -1686,22 +1687,29 @@ void drawParticleVisualizer() {
     }
 
     // Draw pitch scale labels AFTER particles (to prevent color residue)
+    // Clear label areas first to ensure no particle color remains
     tft.setTextSize(1);
-    tft.setTextColor(TFT_BLACK, TFT_WHITE);
+    tft.setTextColor(TFT_BLACK, TFT_VERYLIGHTGREY);
 
-    // Left side labels
+    // Clear and draw left side labels
+    tft.fillRect(0, y_top, 20, 8, TFT_VERYLIGHTGREY);
     tft.setCursor(2, y_top);
     tft.print("+24");
+    tft.fillRect(0, y_center - 4, 15, 8, TFT_VERYLIGHTGREY);
     tft.setCursor(2, y_center - 4);
     tft.print(" 0");
+    tft.fillRect(0, y_bottom - 8, 20, 8, TFT_VERYLIGHTGREY);
     tft.setCursor(2, y_bottom - 8);
     tft.print("-24");
 
-    // Right side labels
+    // Clear and draw right side labels
+    tft.fillRect(300, y_top, 20, 8, TFT_VERYLIGHTGREY);
     tft.setCursor(302, y_top);
     tft.print("+24");
+    tft.fillRect(300, y_center - 4, 20, 8, TFT_VERYLIGHTGREY);
     tft.setCursor(302, y_center - 4);
     tft.print(" 0");
+    tft.fillRect(300, y_bottom - 8, 20, 8, TFT_VERYLIGHTGREY);
     tft.setCursor(302, y_bottom - 8);
     tft.print("-24");
 }
