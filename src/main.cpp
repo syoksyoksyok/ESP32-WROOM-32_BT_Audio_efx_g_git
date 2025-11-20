@@ -1584,7 +1584,14 @@ void drawParticleVisualizer() {
     }
 
     // Draw enhanced buffer progress bar at bottom
-    if (!buffer_bar_initialized || last_write_pos != g_grainWritePos) {
+    constexpr int SEGMENT_COUNT = 32;
+    constexpr int SEGMENT_WIDTH = 9;
+    constexpr int SEGMENT_GAP = 1;
+    constexpr int SEGMENT_TOTAL_WIDTH = SEGMENT_WIDTH + SEGMENT_GAP;
+    int bar_y = VIZ_BUFFER_BAR_AREA_Y + 8;
+
+    // Initialize buffer bar area once
+    if (!buffer_bar_initialized) {
         // Clear buffer bar area with black background
         tft.fillRect(0, VIZ_BUFFER_BAR_AREA_Y, 320, 48, TFT_BLACK);
 
@@ -1602,33 +1609,11 @@ void drawParticleVisualizer() {
         tft.setCursor(302, VIZ_BUFFER_BAR_AREA_Y);
         tft.print("100%");
 
-        int bar_y = VIZ_BUFFER_BAR_AREA_Y + 8;
-
-        // Draw segmented buffer bar (battery-style with purple segments)
-        constexpr int SEGMENT_COUNT = 32;
-        constexpr int SEGMENT_WIDTH = 9;
-        constexpr int SEGMENT_GAP = 1;
-        constexpr int SEGMENT_TOTAL_WIDTH = SEGMENT_WIDTH + SEGMENT_GAP;
-
-        // Calculate how many segments to fill based on buffer progress
-        int filled_segments = (g_grainWritePos * SEGMENT_COUNT) / GRAIN_BUFFER_SIZE;
-
-        // Draw each segment
+        // Draw all segments initially (all empty)
         for (int i = 0; i < SEGMENT_COUNT; i++) {
             int seg_x = i * SEGMENT_TOTAL_WIDTH;
-
-            if (i < filled_segments) {
-                // Filled segment (purple)
-                tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_PURPLE);
-            } else {
-                // Empty segment (light gray on white background)
-                tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_LIGHTGREY);
-            }
+            tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_LIGHTGREY);
         }
-
-        // Draw current write position marker (red line)
-        int x_pos = (g_grainWritePos * (SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH)) / GRAIN_BUFFER_SIZE;
-        tft.fillRect(x_pos - 1, bar_y, 2, VIZ_BUFFER_BAR_HEIGHT, TFT_RED);
 
         // Draw tick marks at 25% intervals (white on black)
         for (int i = 0; i <= 4; i++) {
@@ -1644,8 +1629,48 @@ void drawParticleVisualizer() {
         tft.setCursor(80, VIZ_BUFFER_BAR_AREA_Y + VIZ_BUFFER_BAR_HEIGHT + 11);
         tft.print("Buf:32768smp/743ms");
 
-        last_write_pos = g_grainWritePos;
         buffer_bar_initialized = true;
+    }
+
+    // Update only changed segments and position marker
+    if (last_write_pos != g_grainWritePos) {
+        static int last_filled_segments = 0;
+        static int last_marker_x = 0;
+
+        // Calculate new filled segments
+        int filled_segments = (g_grainWritePos * SEGMENT_COUNT) / GRAIN_BUFFER_SIZE;
+
+        // Update only segments that changed state
+        if (filled_segments != last_filled_segments) {
+            int start_seg = min(last_filled_segments, filled_segments);
+            int end_seg = max(last_filled_segments, filled_segments);
+
+            for (int i = start_seg; i < end_seg; i++) {
+                int seg_x = i * SEGMENT_TOTAL_WIDTH;
+                if (i < filled_segments) {
+                    // Fill segment (purple)
+                    tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_PURPLE);
+                } else {
+                    // Empty segment (light gray)
+                    tft.fillRect(seg_x, bar_y, SEGMENT_WIDTH, VIZ_BUFFER_BAR_HEIGHT, TFT_LIGHTGREY);
+                }
+            }
+            last_filled_segments = filled_segments;
+        }
+
+        // Clear old position marker (restore segment color underneath)
+        if (last_marker_x > 0) {
+            int old_seg_idx = (last_marker_x * SEGMENT_COUNT) / (SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH);
+            uint16_t restore_color = (old_seg_idx < last_filled_segments) ? TFT_PURPLE : TFT_LIGHTGREY;
+            tft.fillRect(last_marker_x - 1, bar_y, 2, VIZ_BUFFER_BAR_HEIGHT, restore_color);
+        }
+
+        // Draw new position marker (red line)
+        int x_pos = (g_grainWritePos * (SEGMENT_COUNT * SEGMENT_TOTAL_WIDTH)) / GRAIN_BUFFER_SIZE;
+        tft.fillRect(x_pos - 1, bar_y, 2, VIZ_BUFFER_BAR_HEIGHT, TFT_RED);
+
+        last_marker_x = x_pos;
+        last_write_pos = g_grainWritePos;
     }
 
     // Draw current particles and update trails
