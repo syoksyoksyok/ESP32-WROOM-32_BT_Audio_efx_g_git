@@ -122,6 +122,15 @@ constexpr int UI_TRIGGER_LED_X = 310;
 constexpr int UI_TRIGGER_LED_Y = 10;
 constexpr int UI_TRIGGER_LED_RADIUS = 4;
 constexpr unsigned long UI_TRIGGER_LED_DURATION_MS = 50;
+
+// Particle Visualizer Constants
+constexpr int VIZ_AREA_Y_START = 95;
+constexpr int VIZ_INFO_HEIGHT = 15;
+constexpr int VIZ_PARTICLE_Y_START = VIZ_AREA_Y_START + VIZ_INFO_HEIGHT;
+constexpr int VIZ_PARTICLE_HEIGHT = 240 - VIZ_PARTICLE_Y_START - 20;
+constexpr int VIZ_BUFFER_BAR_Y = 235;
+constexpr int VIZ_PARTICLE_MAX_SIZE = 8;
+constexpr int VIZ_PARTICLE_MIN_SIZE = 2;
 // ================================================================= //
 // SECTION: Look-Up Table (LUT) Sizes
 // ================================================================= //
@@ -348,12 +357,12 @@ void updateTriggerLED();
 void drawUiFrame();
 void drawParameterBar(int x, int y, int16_t val, int16_t& lastVal, uint16_t color);
 void drawPitchBar(int x, int y, float val, float& lastVal, uint16_t color);
+void drawParticleVisualizer();
 void initAllLuts();
 const char* getModeString(PlayMode mode);
 const char* getPot4ModeString(Pot4Mode mode);
 bool handleButtonDebounce(ButtonState& b, int pin);
 void invalidateDisplayCache();
-// ★ 追加：新しい関数の前方宣言
 
 // ================================================================= //
 // SECTION: Main Setup & Loop
@@ -1298,12 +1307,7 @@ void updateDisplay() {
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 1, g_params.size_q15, g_display_cache.size_q15, TFT_SKYBLUE);
     drawParameterBar(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 1, g_params.dryWet_q15, g_display_cache.dryWet_q15, TFT_LIGHTBLUE);
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 2, g_params.deja_vu_q15, g_display_cache.deja_vu_q15, TFT_SKYBLUE);
-    if (g_activeGrainCount != g_display_cache.active_grains) {
-        g_display_cache.active_grains = g_activeGrainCount;
-        tft.fillRect(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 2, 60, 10, bg_color);
-        tft.setCursor(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 2 + 2);
-        tft.printf("%d/%d", g_activeGrainCount, MAX_GRAINS);
-    }
+    // Note: Grain count moved to visualizer area
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3, g_params.texture_q15, g_display_cache.texture_q15, TFT_AQUA);
     drawParameterBar(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3, g_params.stereoSpread_q15, g_display_cache.stereoSpread_q15, TFT_AQUA);
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 4, g_params.feedback_q15, g_display_cache.feedback_q15, TFT_AQUA);
@@ -1340,16 +1344,26 @@ void updateDisplay() {
         tft.setCursor(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 6 + 2);
         tft.print(getPot4ModeString(g_pot4_mode));
     }
+    // Compact BPM display
     if (abs(g_current_bpm - g_display_cache.bpm) > 0.1f) {
         g_display_cache.bpm = g_current_bpm;
-        tft.fillRect(0, 120, 320, 80, bg_color);
+        tft.fillRect(5, VIZ_AREA_Y_START + 2, 80, 10, bg_color);
         tft.setTextColor(txt_color, bg_color);
-        tft.setTextSize(3);
-        tft.setTextDatum(MC_DATUM);
-        tft.drawFloat(g_current_bpm, 1, 160, 160);
         tft.setTextSize(1);
-        tft.setTextDatum(TL_DATUM);
+        tft.setCursor(5, VIZ_AREA_Y_START + 2);
+        tft.printf("%.1fBPM", g_current_bpm);
     }
+
+    // Grain count display
+    if (g_activeGrainCount != g_display_cache.active_grains) {
+        g_display_cache.active_grains = g_activeGrainCount;
+        tft.fillRect(240, VIZ_AREA_Y_START + 2, 75, 10, bg_color);
+        tft.setCursor(240, VIZ_AREA_Y_START + 2);
+        tft.printf("%d/%dgrn", g_activeGrainCount, MAX_GRAINS);
+    }
+
+    // Draw particle visualizer
+    drawParticleVisualizer();
 
     // Update trigger LED animation
     updateTriggerLED();
@@ -1366,7 +1380,7 @@ void drawUiFrame() {
     tft.setTextSize(1);
     tft.setTextColor(text_color, bg_color);
     const char* labels1[] = {"POS", "SIZ", "DEJA", "TEX", "FBK", "CLK", "LOOP"};
-    const char* labels2[] = {"PIT", "MIX", "GRNS", "SPR", "MODE", "BT", "POT4"};
+    const char* labels2[] = {"PIT", "MIX", "", "SPR", "MODE", "BT", "POT4"};
     for (int i = 0; i < 7; i++) {
         tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * i + 2);
         tft.print(labels1[i]);
@@ -1380,6 +1394,9 @@ void drawUiFrame() {
     tft.fillRect(0, UI_SEPARATOR_Y_NEW + 1, 320, 240 - (UI_SEPARATOR_Y_NEW + 1),
                  GET_VISUALIZER_BG_COLOR());
     tft.drawCircle(UI_TRIGGER_LED_X, UI_TRIGGER_LED_Y, UI_TRIGGER_LED_RADIUS, TFT_DARKGREY);
+
+    // Draw visualizer separator line
+    tft.drawLine(0, VIZ_PARTICLE_Y_START - 1, 320, VIZ_PARTICLE_Y_START - 1, line_color);
 }
 
 void drawParameterBar(int x, int y, int16_t val, int16_t& lastVal, uint16_t color) {
@@ -1438,6 +1455,78 @@ void drawPitchBar(int x, int y, float val, float& lastVal, uint16_t color) {
     lastVal = val;
 }
 
+
+// ================================================================= //
+// SECTION: Particle Visualizer
+// ================================================================= //
+void drawParticleVisualizer() {
+    static uint16_t last_write_pos = 0xFFFF;
+    uint16_t bg_color = g_inverse_mode ? TFT_WHITE : TFT_BLACK;
+
+    // Clear particle area every frame for smooth animation
+    tft.fillRect(0, VIZ_PARTICLE_Y_START, 320, VIZ_PARTICLE_HEIGHT, bg_color);
+
+    // Draw buffer progress bar at bottom
+    if (last_write_pos != g_grainWritePos) {
+        // Erase old position marker
+        if (last_write_pos != 0xFFFF) {
+            int old_x = (last_write_pos * 320) / GRAIN_BUFFER_SIZE;
+            tft.drawFastVLine(old_x, VIZ_BUFFER_BAR_Y, 5, bg_color);
+        }
+
+        // Draw buffer bar
+        tft.drawRect(0, VIZ_BUFFER_BAR_Y, 320, 5, g_inverse_mode ? TFT_DARKGREY : TFT_LIGHTGREY);
+
+        // Draw current write position
+        int x_pos = (g_grainWritePos * 320) / GRAIN_BUFFER_SIZE;
+        tft.drawFastVLine(x_pos, VIZ_BUFFER_BAR_Y, 5, TFT_RED);
+        last_write_pos = g_grainWritePos;
+    }
+
+    // Draw particles for each active grain
+    for (uint8_t i = 0; i < g_activeGrainCount; i++) {
+        uint8_t grain_idx = g_activeGrainIndices[i];
+        Grain& grain = g_grains[grain_idx];
+
+        if (!grain.active) continue;
+
+        // Calculate X position (buffer position: 0-320)
+        uint16_t current_pos = grain.position_q16 >> 16;
+        uint16_t buffer_pos = (grain.startPos + current_pos) & GRAIN_BUFFER_MASK;
+        int x = (buffer_pos * 320) / GRAIN_BUFFER_SIZE;
+
+        // Calculate Y position (pitch: speed_q16 mapped to Y axis)
+        // speed_q16: 1<<16 = normal pitch (center)
+        // Map to VIZ_PARTICLE_Y_START to VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT
+        int32_t pitch_offset = grain.speed_q16 - (1 << 16);  // Offset from center
+        int y_center = VIZ_PARTICLE_Y_START + (VIZ_PARTICLE_HEIGHT / 2);
+        int y = y_center - (pitch_offset >> 12);  // Scale down for display
+        y = constrain(y, VIZ_PARTICLE_Y_START + 2, VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT - 2);
+
+        // Calculate particle size (envelope progress)
+        float progress = (float)current_pos / grain.length;
+        // Use Hann window for size (larger in middle, smaller at edges)
+        float envelope = 0.5f * (1.0f - cosf(2.0f * PI * progress));
+        int size = VIZ_PARTICLE_MIN_SIZE + (int)(envelope * (VIZ_PARTICLE_MAX_SIZE - VIZ_PARTICLE_MIN_SIZE));
+        size = constrain(size, VIZ_PARTICLE_MIN_SIZE, VIZ_PARTICLE_MAX_SIZE);
+
+        // Calculate color (progress-based gradient)
+        uint16_t color;
+        if (progress < 0.33f) {
+            // Start: Cyan to Yellow
+            color = TFT_CYAN;
+        } else if (progress < 0.66f) {
+            // Middle: Yellow to Magenta
+            color = TFT_YELLOW;
+        } else {
+            // End: Magenta to Red
+            color = TFT_MAGENTA;
+        }
+
+        // Draw particle (filled circle)
+        tft.fillCircle(x, y, size / 2, color);
+    }
+}
 
 // ================================================================= //
 // SECTION: Initialization & Helpers
