@@ -667,18 +667,23 @@ void handleDejaVuTrigger() {
         g_deja_vu_buffer[current_step_in_loop] = params_to_use;
     }
 
-    // Generate grains per trigger - more grains at higher pitches
+    // Generate grains per trigger - increase across entire pitch range
     uint8_t base_grains = 1;
-    uint8_t max_grains = 3;
+    uint8_t max_grains;
 
-    // Increase grain count for positive pitch (faster playback needs more grains)
-    if (params_to_use.pitch_f > 0.0f) {
+    if (params_to_use.pitch_f < 0.0f) {
+        // Negative pitch: gradual linear increase from -24 to 0
+        // pitch_f: -24 to 0 semitones
+        float pitch_factor_neg = (params_to_use.pitch_f + 24.0f) / 24.0f;  // 0.0 ~ 1.0
+        max_grains = 2 + (uint8_t)(pitch_factor_neg * 3.0f);  // 2 to 5 grains
+        // Examples: pitch=-24 -> max 2, pitch=-12 -> max 3, pitch=0 -> max 5
+    } else {
+        // Positive pitch: rapid quadratic increase from 0 to +24
         // pitch_f: 0 to +24 semitones
-        float pitch_factor = params_to_use.pitch_f / 24.0f;  // 0.0 ~ 1.0
-        // More aggressive scaling: quadratic increase
-        float scaled_factor = pitch_factor * pitch_factor;  // Square for faster growth
-        max_grains = 3 + (uint8_t)(scaled_factor * 17.0f);  // 3 to 20 grains
-        // Examples: pitch=+6 -> max 4, pitch=+12 -> max 7, pitch=+18 -> max 13, pitch=+24 -> max 20
+        float pitch_factor_pos = params_to_use.pitch_f / 24.0f;  // 0.0 ~ 1.0
+        float scaled_factor = pitch_factor_pos * pitch_factor_pos;  // Square for rapid growth
+        max_grains = 5 + (uint8_t)(scaled_factor * 15.0f);  // 5 to 20 grains
+        // Examples: pitch=0 -> max 5, pitch=+12 -> max 8, pitch=+24 -> max 20
     }
 
     uint8_t grains_to_generate = base_grains + (esp_random() % max_grains);
