@@ -675,8 +675,10 @@ void handleDejaVuTrigger() {
     if (params_to_use.pitch_f > 0.0f) {
         // pitch_f: 0 to +24 semitones
         float pitch_factor = params_to_use.pitch_f / 24.0f;  // 0.0 ~ 1.0
-        max_grains = 3 + (uint8_t)(pitch_factor * 4.0f);  // 3 to 7 grains
-        // Examples: pitch=0 -> max 3, pitch=+12 -> max 5, pitch=+24 -> max 7
+        // More aggressive scaling: quadratic increase
+        float scaled_factor = pitch_factor * pitch_factor;  // Square for faster growth
+        max_grains = 3 + (uint8_t)(scaled_factor * 9.0f);  // 3 to 12 grains
+        // Examples: pitch=+6 -> max 3, pitch=+12 -> max 6, pitch=+18 -> max 9, pitch=+24 -> max 12
     }
 
     uint8_t grains_to_generate = base_grains + (esp_random() % max_grains);
