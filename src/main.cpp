@@ -1556,32 +1556,32 @@ void drawParticleVisualizer() {
     // Initialize particle area once (first frame only)
     static bool particle_area_initialized = false;
     if (!particle_area_initialized) {
-        // Clear pitch label and particle area initially
+        // Clear pan label and particle area initially
         int clear_y_start = VIZ_SEPARATOR_LINE_Y + 1;
         int clear_height = 240 - clear_y_start;
         tft.fillRect(0, clear_y_start, 320, clear_height, TFT_BLACK);
 
-        // Draw horizontal pitch labels at top (new layout: X-axis = pitch)
+        // Draw horizontal pan labels at top (new layout: X-axis = PAN)
         tft.setTextSize(1);
         tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
-        // Left label: -24
-        tft.setCursor(VIZ_PARTICLE_X_MIN, VIZ_PITCH_LABEL_Y);
-        tft.print("-24");
+        // Left label: L
+        tft.setCursor(VIZ_PARTICLE_X_MIN + 2, VIZ_PITCH_LABEL_Y);
+        tft.print("L");
 
-        // Center label: 0
-        int center_x = VIZ_PARTICLE_X_MIN + (VIZ_PARTICLE_X_RANGE / 2) - 6;  // -6 to center text
+        // Center label: C
+        int center_x = VIZ_PARTICLE_X_MIN + (VIZ_PARTICLE_X_RANGE / 2) - 3;  // -3 to center single char
         tft.setCursor(center_x, VIZ_PITCH_LABEL_Y);
-        tft.print("0");
+        tft.print("C");
 
-        // Right label: +24
-        tft.setCursor(VIZ_PARTICLE_X_MAX - 18, VIZ_PITCH_LABEL_Y);  // -18 for text width
-        tft.print("+24");
+        // Right label: R
+        tft.setCursor(VIZ_PARTICLE_X_MAX - 8, VIZ_PITCH_LABEL_Y);  // -8 for single char
+        tft.print("R");
 
-        // Draw center reference line (pitch = 0) as dashed vertical line
-        int center_pitch_x = VIZ_PARTICLE_X_MIN + (VIZ_PARTICLE_X_RANGE / 2);
+        // Draw center reference line (pan = center) as dashed vertical line
+        int center_pan_x = VIZ_PARTICLE_X_MIN + (VIZ_PARTICLE_X_RANGE / 2);
         for (int y = VIZ_PARTICLE_Y_START; y < VIZ_PARTICLE_Y_START + VIZ_PARTICLE_HEIGHT; y += 8) {
-            tft.drawFastVLine(center_pitch_x, y, 4, TFT_DARKGREY);
+            tft.drawFastVLine(center_pan_x, y, 4, TFT_DARKGREY);
         }
 
         particle_area_initialized = true;
@@ -1703,13 +1703,16 @@ void drawParticleVisualizer() {
         size = constrain(size, VIZ_PARTICLE_MIN_SIZE, VIZ_PARTICLE_MAX_SIZE);
         int particle_radius = size / 2;
 
-        // Calculate X position based on pitch (NEW: X-axis = pitch)
-        // pitch_f: -24 to +24 semitones mapped to X axis
-        // pitch_f = -24 -> left edge (x = VIZ_PARTICLE_X_MIN)
-        // pitch_f = 0   -> center
-        // pitch_f = +24 -> right edge (x = VIZ_PARTICLE_X_MAX)
+        // Calculate X position based on PAN (NEW: X-axis = pan position)
+        // panL_q15 and panR_q15: Q15 format (0 to ~32767)
+        // Calculate pan balance: -1.0 (full left) to 0.0 (center) to +1.0 (full right)
+        float pan_balance = (grain.panR_q15 - grain.panL_q15) / 32767.0f;
+        // Map to X coordinate
+        // pan_balance = -1.0 -> left edge (L)
+        // pan_balance = 0.0  -> center (C)
+        // pan_balance = +1.0 -> right edge (R)
         int x_center = VIZ_PARTICLE_X_MIN + (VIZ_PARTICLE_X_RANGE / 2);
-        int x = x_center + (int)((grain.pitch_f / 24.0f) * (VIZ_PARTICLE_X_RANGE / 2));
+        int x = x_center + (int)(pan_balance * (VIZ_PARTICLE_X_RANGE / 2));
         // Keep particle within bounds
         x = constrain(x, VIZ_PARTICLE_X_MIN, VIZ_PARTICLE_X_MAX - 1);
 
