@@ -388,6 +388,57 @@ void invalidateDisplayCache();
 // ================================================================= //
 void setup() {
     Serial.begin(115200);
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // メモリ診断（起動時）
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    delay(1000);  // シリアルモニタ接続待ち
+    Serial.println("\n========================================");
+    Serial.println("ESP32 Memory Diagnostics");
+    Serial.println("========================================");
+
+    // PSRAMの有無を確認
+    if (psramFound()) {
+        Serial.println("✅ PSRAM: DETECTED");
+        Serial.printf("   Total PSRAM: %u bytes (%.2f MB)\n",
+            ESP.getPsramSize(), ESP.getPsramSize() / 1024.0 / 1024.0);
+        Serial.printf("   Free PSRAM:  %u bytes (%.2f MB)\n",
+            ESP.getFreePsram(), ESP.getFreePsram() / 1024.0 / 1024.0);
+    } else {
+        Serial.println("❌ PSRAM: NOT DETECTED");
+        Serial.println("⚠️  WARNING: g_grainBuffer (256KB) is in internal SRAM!");
+    }
+
+    // 内部SRAMの状況
+    Serial.printf("\n📊 Internal SRAM:\n");
+    Serial.printf("   Total Heap:  %u bytes (%.2f KB)\n",
+        ESP.getHeapSize(), ESP.getHeapSize() / 1024.0);
+    Serial.printf("   Free Heap:   %u bytes (%.2f KB)\n",
+        ESP.getFreeHeap(), ESP.getFreeHeap() / 1024.0);
+    Serial.printf("   Min Free:    %u bytes (%.2f KB)\n",
+        ESP.getMinFreeHeap(), ESP.getMinFreeHeap() / 1024.0);
+
+    // グレインバッファのサイズと位置
+    Serial.printf("\n🎵 Audio Buffers:\n");
+    Serial.printf("   g_grainBuffer size: %u bytes (%.2f KB)\n",
+        sizeof(g_grainBuffer), sizeof(g_grainBuffer) / 1024.0);
+    Serial.printf("   g_grainBuffer addr: %p\n", (void*)g_grainBuffer);
+
+    // メモリアドレスから配置場所を推測
+    uint32_t addr = (uint32_t)g_grainBuffer;
+    if (addr >= 0x3F800000 && addr < 0x3FC00000) {
+        Serial.println("   Location: External PSRAM ✅");
+    } else if (addr >= 0x3FF00000 && addr < 0x40000000) {
+        Serial.println("   Location: Internal DRAM0 ⚠️");
+    } else if (addr >= 0x3FFE0000 && addr < 0x3FFF0000) {
+        Serial.println("   Location: Internal DRAM1 ⚠️");
+    } else {
+        Serial.printf("   Location: Unknown (0x%08X)\n", addr);
+    }
+
+    Serial.println("========================================\n");
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
     tft.init();
     tft.setRotation(1);
     initAllLuts();
