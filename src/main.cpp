@@ -101,6 +101,22 @@ constexpr int RING_BUFFER_SIZE = 4096;
 constexpr int MAX_GRAINS = 10;  // Increased from 6 for richer visuals
 constexpr int MIN_GRAIN_SIZE = 512;  // Min ~11.6ms (was 128)
 constexpr int FEEDBACK_BUFFER_SIZE = 512;
+
+// グレイン数に応じたゲイン補正テーブル（Q15形式、1/sqrt(N)に近似）
+// クリッピング防止と等パワーミックスのため
+constexpr int16_t GRAIN_GAIN_SCALE_Q15[MAX_GRAINS + 1] = {
+    32767,  // 0 grains (unused)
+    32767,  // 1 grain  = 1.00x
+    23170,  // 2 grains ≈ 0.707x (1/√2)
+    18919,  // 3 grains ≈ 0.577x (1/√3)
+    16384,  // 4 grains ≈ 0.500x (1/√4)
+    14654,  // 5 grains ≈ 0.447x (1/√5)
+    13377,  // 6 grains ≈ 0.408x (1/√6)
+    12386,  // 7 grains ≈ 0.378x (1/√7)
+    11585,  // 8 grains ≈ 0.354x (1/√8)
+    10923,  // 9 grains ≈ 0.333x (1/√9)
+    10362   // 10 grains ≈ 0.316x (1/√10)
+};
 constexpr int I2S_BUFFER_SAMPLES = 128;
 constexpr int DEJA_VU_BUFFER_SIZE = 16;
 // ================================================================= //
@@ -572,6 +588,31 @@ void granularTask(void* param) {
     }
 }
 
+// ソフトクリッピング関数（高速tanh近似）
+// 入力範囲: -32768 ~ 32767
+// 出力範囲: -32767 ~ 32767（滑らかに飽和）
+inline int16_t softClip(int32_t x) {
+    // 範囲内ならそのまま
+    if (x >= -24576 && x <= 24576) {
+        return (int16_t)x;
+    }
+
+    // 3次多項式による滑らかなクリッピング
+    if (x > 24576) {
+        int32_t excess = x - 24576;
+        if (excess > 8191) return 32767;
+        // 滑らかな遷移領域
+        int32_t soft = 24576 + excess - ((excess * excess) >> 13);
+        return (int16_t)min(soft, 32767);
+    } else {
+        int32_t excess = -24576 - x;
+        if (excess > 8191) return -32767;
+        // 滑らかな遷移領域
+        int32_t soft = -24576 - excess + ((excess * excess) >> 13);
+        return (int16_t)max(soft, -32767);
+    }
+}
+
 void processAudioSample(int16_t inputSample) {
     static int16_t i2s_buffer[I2S_BUFFER_SAMPLES * 2];
     static int16_t feedbackBuffer[FEEDBACK_BUFFER_SIZE];
@@ -580,7 +621,7 @@ void processAudioSample(int16_t inputSample) {
 
     int16_t fbSample = feedbackBuffer[fbWritePos];
     int32_t mixed = inputSample + (((int32_t)fbSample * g_params.feedback_q15) >> 15);
-    mixed = constrain(mixed, -32767, 32767);
+    mixed = softClip(mixed);  // ソフトクリッピングに変更
 
     g_grainBuffer[g_grainWritePos] = (int16_t)mixed;
     g_grainWritePos = (g_grainWritePos + 1) & GRAIN_BUFFER_MASK;
@@ -592,13 +633,13 @@ void processAudioSample(int16_t inputSample) {
     int32_t wetL_accumulator = 0, wetR_accumulator = 0;
     renderAllGrains(wetL_accumulator, wetR_accumulator);
 
-    int16_t wetL = constrain(wetL_accumulator, -32767, 32767);
-    int16_t wetR = constrain(wetR_accumulator, -32768, 32767);
+    int16_t wetL = softClip(wetL_accumulator);  // ソフトクリッピングに変更
+    int16_t wetR = softClip(wetR_accumulator);  // ソフトクリッピングに変更
 
     int16_t wet_q15 = g_params.dryWet_q15;
     int16_t dry_q15 = 32767 - wet_q15;
-    int16_t outL = constrain(((int32_t)inputSample*dry_q15+(int32_t)wetL*wet_q15)>>15, -32768, 32767);
-    int16_t outR = constrain(((int32_t)inputSample*dry_q15+(int32_t)wetR*wet_q15)>>15, -32768, 32767);
+    int16_t outL = softClip(((int32_t)inputSample*dry_q15+(int32_t)wetL*wet_q15)>>15);  // ソフトクリッピングに変更
+    int16_t outR = softClip(((int32_t)inputSample*dry_q15+(int32_t)wetR*wet_q15)>>15);  // ソフトクリッピングに変更
     feedbackBuffer[fbWritePos] = (int16_t)((((long)outL + outR) >> 1) * g_params.feedback_q15 >> 15);
     fbWritePos = (fbWritePos + 1) & (FEEDBACK_BUFFER_SIZE - 1);
     i2s_buffer[i2s_buffer_pos++] = outL;
@@ -625,7 +666,9 @@ void processAudioSample(int16_t inputSample) {
 void a2dp_data_callback(const uint8_t *data, uint32_t length) {
     int16_t* samples = (int16_t*)data;
     for(uint32_t i=0; i<length/4; i++) {
-        g_ringBuffer.write((samples[i*2]>>1)+(samples[i*2+1]>>1));
+        // 32ビットアキュムレータで加算してから除算（解像度の損失を防ぐ）
+        int32_t sum = (int32_t)samples[i*2] + (int32_t)samples[i*2+1];
+        g_ringBuffer.write((int16_t)(sum >> 1));
     }
 }
 
@@ -741,14 +784,20 @@ void triggerGrain(int idx, const ParamSnapshot& params) {
 
 void renderAllGrains(int32_t& wetL, int32_t& wetR) {
     if (!g_grainBufferReady || g_activeGrainCount == 0) return;
+
+    // グレイン数に応じたゲイン補正を取得（クリッピング防止）
+    int16_t gain_scale_q15 = GRAIN_GAIN_SCALE_Q15[g_activeGrainCount];
+
     for (uint8_t i = 0; i < g_activeGrainCount; ) {
         uint8_t grain_idx = g_activeGrainIndices[i];
         Grain& grain = g_grains[grain_idx];
         int16_t sample = renderGrain(grain);
 
         if (grain.active) {
-            wetL += ((int32_t)sample * grain.panL_q15) >> 15;
-            wetR += ((int32_t)sample * grain.panR_q15) >> 15;
+            // ゲイン補正を適用してからパンニング
+            int32_t scaled_sample = ((int32_t)sample * gain_scale_q15) >> 15;
+            wetL += (scaled_sample * grain.panL_q15) >> 15;
+            wetR += (scaled_sample * grain.panR_q15) >> 15;
             i++;
         } else {
             for (uint8_t j = i; j < g_activeGrainCount - 1; j++) {
@@ -766,8 +815,20 @@ int16_t renderGrain(Grain& g) {
         return 0;
     }
 
-    uint16_t read_idx = (g.startPos + ((g_params.mode == MODE_REVERSE) ? g.length-1-pos_int : pos_int)) & GRAIN_BUFFER_MASK;
-    int16_t sample = g_grainBuffer[read_idx];
+    // リニア補間によるアンチエイリアシング
+    uint16_t base_pos = (g_params.mode == MODE_REVERSE) ? g.length-1-pos_int : pos_int;
+    uint16_t read_idx1 = (g.startPos + base_pos) & GRAIN_BUFFER_MASK;
+    uint16_t read_idx2 = (g.startPos + base_pos + 1) & GRAIN_BUFFER_MASK;
+
+    int16_t sample1 = g_grainBuffer[read_idx1];
+    int16_t sample2 = g_grainBuffer[read_idx2];
+
+    // Q16フォーマットの小数部分を取得（0-65535の範囲）
+    uint16_t frac = g.position_q16 & 0xFFFF;
+
+    // リニア補間: sample1 + (sample2 - sample1) * frac
+    int32_t interpolated = (int32_t)sample1 + (((int32_t)(sample2 - sample1) * frac) >> 16);
+    int16_t sample = (int16_t)interpolated;
 
     uint16_t window_idx = ((uint32_t)pos_int * g.reciprocal_length_q32) >> 25;
     int16_t window_val = g_window_lut_q15[min((uint16_t)window_idx, (uint16_t)(WINDOW_LUT_SIZE-1))];
