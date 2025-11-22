@@ -171,7 +171,9 @@ enum Pot4Mode : uint8_t {
     MODE_FEEDBACK = 2,
     MODE_LOOP_LENGTH = 3,
     MODE_CLK_RESOLUTION = 4,
-    POT4_MODE_COUNT = 5
+    MODE_REVERB_MIX = 5,      // リバーブMIX
+    MODE_REVERB_ROOM = 6,     // ルームサイズ
+    POT4_MODE_COUNT = 7
 };
 struct FullParamSnapshot {
     int16_t position_q15;
@@ -186,6 +188,8 @@ struct FullParamSnapshot {
     PlayMode mode;
     Pot4Mode pot4_mode;
     int resolution_index;
+    int16_t reverb_mix_q15;   // リバーブMIX
+    int16_t reverb_room_q15;  // ルームサイズ
 };
 struct UIDisplayCache {
     int16_t position_q15, size_q15, deja_vu_q15, dryWet_q15;
@@ -198,6 +202,8 @@ struct UIDisplayCache {
     bool   bt_connected;
     int    resolution_index;
     uint8_t active_grains;
+    int16_t reverb_mix_q15;   // リバーブMIX
+    int16_t reverb_room_q15;  // ルームサイズ
     float   bpm;
 };
 
@@ -243,6 +249,8 @@ struct GranParams {
     int16_t feedback_q15;
     int16_t dryWet_q15;
     int8_t loop_length;
+    int16_t reverb_mix_q15;   // リバーブMIX (0-32767)
+    int16_t reverb_room_q15;  // ルームサイズ (0-32767)
 };
 
 struct ButtonState {
@@ -253,6 +261,69 @@ struct ButtonState {
         lastState = HIGH;
         pressStartTime = 0;
     }
+};
+
+// ================================================================= //
+// SECTION: Reverb Engine Structures
+// ================================================================= //
+// コムフィルタ（ディレイ + フィードバック + ローパス）
+struct CombFilter {
+    int16_t* buffer;
+    uint16_t bufferSize;
+    uint16_t writePos;
+    int16_t feedback_q15;
+    int16_t damping_q15;
+    int16_t filterState;  // 1次ローパスフィルタの状態変数
+
+    void init(int16_t* buf, uint16_t size) {
+        buffer = buf;
+        bufferSize = size;
+        writePos = 0;
+        feedback_q15 = 0;
+        damping_q15 = 16384;  // 0.5
+        filterState = 0;
+    }
+
+    int16_t process(int16_t input) {
+        int16_t output = buffer[writePos];
+        // ローパスフィルタ: filterState = filterState * (1-damp) + output * damp
+        filterState = (int16_t)(((int32_t)filterState * (32767 - damping_q15) +
+                                 (int32_t)output * damping_q15) >> 15);
+        // フィードバック: input + filterState * feedback
+        buffer[writePos] = (int16_t)(input + (((int32_t)filterState * feedback_q15) >> 15));
+        writePos = (writePos + 1) % bufferSize;
+        return output;
+    }
+};
+
+// オールパスフィルタ（拡散処理）
+struct AllpassFilter {
+    int16_t* buffer;
+    uint16_t bufferSize;
+    uint16_t writePos;
+
+    void init(int16_t* buf, uint16_t size) {
+        buffer = buf;
+        bufferSize = size;
+        writePos = 0;
+    }
+
+    int16_t process(int16_t input) {
+        int16_t bufout = buffer[writePos];
+        // オールパス: output = -input + bufout + input * 0.5
+        int16_t output = (int16_t)(-input + bufout + (input >> 1));
+        buffer[writePos] = (int16_t)(input + (bufout >> 1));
+        writePos = (writePos + 1) % bufferSize;
+        return output;
+    }
+};
+
+// リバーブエンジン
+struct Reverb {
+    CombFilter combL[4];
+    CombFilter combR[4];
+    AllpassFilter apL[2];
+    AllpassFilter apR[2];
 };
 
 struct ParamSnapshot {
@@ -273,6 +344,25 @@ AudioRingBuffer g_ringBuffer;
 int16_t g_grainBuffer[GRAIN_BUFFER_SIZE];  // 256KB in internal SRAM (ESP32-WROOM-32)
 volatile uint16_t g_grainWritePos = 0;
 bool g_grainBufferReady = false;
+
+// Reverb Buffers (Freeverb-style, ~24.6KB total)
+// コムフィルタディレイライン（ステレオ4ペア）
+int16_t g_reverbCombL1[1116];
+int16_t g_reverbCombL2[1188];
+int16_t g_reverbCombL3[1277];
+int16_t g_reverbCombL4[1356];
+int16_t g_reverbCombR1[1422];
+int16_t g_reverbCombR2[1491];
+int16_t g_reverbCombR3[1557];
+int16_t g_reverbCombR4[1617];
+// オールパスディレイライン（ステレオ2ペア）
+int16_t g_reverbApL1[225];
+int16_t g_reverbApL2[341];
+int16_t g_reverbApR1[441];
+int16_t g_reverbApR2[556];
+
+// Reverb Engine
+Reverb g_reverb;
 
 // Grain Management
 Grain g_grains[MAX_GRAINS];
@@ -377,6 +467,10 @@ void drawUiFrame();
 void drawParameterBar(int x, int y, int16_t val, int16_t& lastVal, uint16_t color);
 void drawPitchBar(int x, int y, float val, float& lastVal, uint16_t color);
 void drawParticleVisualizer();
+// Reverb Functions
+void initReverb();
+void updateReverbParams(int16_t roomSize_q15);
+void processReverb(int16_t inL, int16_t inR, int16_t& outL, int16_t& outR);
 void initAllLuts();
 const char* getModeString(PlayMode mode);
 const char* getPot4ModeString(Pot4Mode mode);
@@ -420,6 +514,7 @@ void setup() {
     tft.init();
     tft.setRotation(1);
     initAllLuts();
+    initReverb();  // リバーブエンジン初期化
 
     g_ringBuffer.init();
     for(int i = 0; i < MAX_GRAINS; i++) g_grains[i].reset();
@@ -456,6 +551,8 @@ void setup() {
     g_params.stereoSpread_q15 = 29490;
     g_params.feedback_q15 = g_feedback_lut_q15[51];
     g_params.loop_length = 16;
+    g_params.reverb_mix_q15 = 0;       // 初期値: リバーブオフ
+    g_params.reverb_room_q15 = 16384;  // 初期値: 50%のルームサイズ
     // 起動時にランダムなパラメータでスナップショットを初期化
     initializeSnapshots();
     
@@ -520,6 +617,8 @@ void invalidateDisplayCache() {
     g_display_cache.resolution_index = -1;
     g_display_cache.active_grains = 255; // uint8_tには最大値などを
     g_display_cache.bpm = -1000.0f;
+    g_display_cache.reverb_mix_q15 = -1;   // リバーブMIX
+    g_display_cache.reverb_room_q15 = -1;  // ルームサイズ
     // g_display_cache.bt_connected はsetupで初期化されるのでここでは不要
 }
 
@@ -667,8 +766,19 @@ void processAudioSample(int16_t inputSample) {
 
     int16_t wet_q15 = g_params.dryWet_q15;
     int16_t dry_q15 = 32767 - wet_q15;
-    int16_t outL = softClip(((int32_t)inputSample*dry_q15+(int32_t)wetL*wet_q15)>>15);  // ソフトクリッピングに変更
-    int16_t outR = softClip(((int32_t)inputSample*dry_q15+(int32_t)wetR*wet_q15)>>15);  // ソフトクリッピングに変更
+    int16_t granOutL = softClip(((int32_t)inputSample*dry_q15+(int32_t)wetL*wet_q15)>>15);  // グラニュラーエフェクト出力
+    int16_t granOutR = softClip(((int32_t)inputSample*dry_q15+(int32_t)wetR*wet_q15)>>15);
+
+    // リバーブ処理
+    int16_t reverbOutL, reverbOutR;
+    processReverb(granOutL, granOutR, reverbOutL, reverbOutR);
+
+    // リバーブMIX
+    int16_t rvbMix_q15 = g_params.reverb_mix_q15;
+    int16_t rvbDry_q15 = 32767 - rvbMix_q15;
+    int16_t outL = softClip(((int32_t)granOutL*rvbDry_q15+(int32_t)reverbOutL*rvbMix_q15)>>15);
+    int16_t outR = softClip(((int32_t)granOutR*rvbDry_q15+(int32_t)reverbOutR*rvbMix_q15)>>15);
+
     feedbackBuffer[fbWritePos] = (int16_t)((((long)outL + outR) >> 1) * g_params.feedback_q15 >> 15);
     fbWritePos = (fbWritePos + 1) & (FEEDBACK_BUFFER_SIZE - 1);
     i2s_buffer[i2s_buffer_pos++] = outL;
@@ -992,6 +1102,13 @@ void updateParametersFromPots() {
                             g_current_resolution_index = constrain(resolution, 0, 6);
                             break;
                         }
+                        case MODE_REVERB_MIX:
+                            g_params.reverb_mix_q15 = (int16_t)(val_f * 32767.0f);
+                            break;
+                        case MODE_REVERB_ROOM:
+                            g_params.reverb_room_q15 = (int16_t)(val_f * 32767.0f);
+                            updateReverbParams(g_params.reverb_room_q15);
+                            break;
                     }
                     break;
                 case 4: { // ★ ピッチ（ソフトテイクオーバー対応）
@@ -1063,6 +1180,8 @@ void initializeSnapshots() {
         g_snapshots[i].pot4_mode    = (Pot4Mode)(esp_random() % POT4_MODE_COUNT);
         g_snapshots[i].resolution_index = 3 + (esp_random() % 4);
         g_snapshots[i].dryWet_q15   = (i < 3) ? 32767 : 0;
+        g_snapshots[i].reverb_mix_q15  = esp_random() % 32768;  // リバーブMIX
+        g_snapshots[i].reverb_room_q15 = esp_random() % 32768;  // ルームサイズ
 
         g_snapshots_initialized[i] = true;
     }
@@ -1087,6 +1206,8 @@ void saveSnapshot(int slot) {
     g_snapshots[slot].dryWet_q15 = g_params.dryWet_q15;
     g_snapshots[slot].pitch_f = g_params.pitch_f;
     g_snapshots[slot].loop_length = g_params.loop_length;
+    g_snapshots[slot].reverb_mix_q15 = g_params.reverb_mix_q15;   // リバーブMIX
+    g_snapshots[slot].reverb_room_q15 = g_params.reverb_room_q15; // ルームサイズ
     g_snapshots[slot].mode = g_params.mode;
     g_snapshots[slot].pot4_mode = g_pot4_mode;
     g_snapshots[slot].resolution_index = g_current_resolution_index;
@@ -1113,6 +1234,9 @@ void loadSnapshot(int slot) {
     g_params.pitch_f          = g_snapshots[slot].pitch_f;
     g_params.loop_length      = g_snapshots[slot].loop_length;
     g_params.mode             = g_snapshots[slot].mode;
+    g_params.reverb_mix_q15   = g_snapshots[slot].reverb_mix_q15;   // リバーブMIX
+    g_params.reverb_room_q15  = g_snapshots[slot].reverb_room_q15;  // ルームサイズ
+    updateReverbParams(g_params.reverb_room_q15);  // リバーブパラメータ更新
     // ★ ここを追加：CLK（分解能）をスナップショットから復元
     int idx = g_snapshots[slot].resolution_index;
     if (!isfinite((float)idx)) idx = 3;
@@ -1400,16 +1524,11 @@ void updateDisplay() {
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 1, g_params.size_q15, g_display_cache.size_q15, TFT_SKYBLUE);
     drawParameterBar(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 1, g_params.dryWet_q15, g_display_cache.dryWet_q15, TFT_LIGHTBLUE);
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 2, g_params.deja_vu_q15, g_display_cache.deja_vu_q15, TFT_SKYBLUE);
-    // Note: Grain count moved to visualizer area
+    drawParameterBar(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 2, g_params.reverb_mix_q15, g_display_cache.reverb_mix_q15, 0x0410);  // RVB (teal)
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3, g_params.texture_q15, g_display_cache.texture_q15, TFT_AQUA);
-    drawParameterBar(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3, g_params.stereoSpread_q15, g_display_cache.stereoSpread_q15, TFT_AQUA);
+    drawParameterBar(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 3, g_params.reverb_room_q15, g_display_cache.reverb_room_q15, 0x8010);  // ROOM (purple)
     drawParameterBar(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 4, g_params.feedback_q15, g_display_cache.feedback_q15, TFT_AQUA);
-    if (g_params.mode != g_display_cache.mode) {
-        g_display_cache.mode = g_params.mode;
-        tft.fillRect(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 4, 60, 10, bg_color);
-        tft.setCursor(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 4 + 2);
-        tft.print(getModeString(g_display_cache.mode));
-    }
+    drawParameterBar(UI_COL2_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 4, g_params.stereoSpread_q15, g_display_cache.stereoSpread_q15, TFT_AQUA);
     if (g_current_resolution_index != g_display_cache.resolution_index) {
         g_display_cache.resolution_index = g_current_resolution_index;
         tft.fillRect(UI_COL1_BAR_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * 5, 60, 10, bg_color);
@@ -1474,7 +1593,7 @@ void drawUiFrame() {
     tft.setTextSize(1);
     tft.setTextColor(text_color, bg_color);
     const char* labels1[] = {"POS", "SIZ", "DEJA", "TEX", "FBK", "CLK", "LOOP"};
-    const char* labels2[] = {"PIT", "MIX", "", "SPR", "MODE", "BT", "POT4"};
+    const char* labels2[] = {"PIT", "MIX", "RVB", "ROOM", "SPR", "BT", "POT4"};
     for (int i = 0; i < 7; i++) {
         tft.setCursor(UI_COL1_LABEL_X, UI_PARAM_Y_START + UI_PARAM_Y_SPACING * i + 2);
         tft.print(labels1[i]);
@@ -1801,17 +1920,107 @@ void initAllLuts() {
     initRandomLut();
 }
 
+// ================================================================= //
+// SECTION: Reverb Engine Implementation
+// ================================================================= //
+void initReverb() {
+    // コムフィルタ初期化（左チャンネル）
+    g_reverb.combL[0].init(g_reverbCombL1, 1116);
+    g_reverb.combL[1].init(g_reverbCombL2, 1188);
+    g_reverb.combL[2].init(g_reverbCombL3, 1277);
+    g_reverb.combL[3].init(g_reverbCombL4, 1356);
+
+    // コムフィルタ初期化（右チャンネル）
+    g_reverb.combR[0].init(g_reverbCombR1, 1422);
+    g_reverb.combR[1].init(g_reverbCombR2, 1491);
+    g_reverb.combR[2].init(g_reverbCombR3, 1557);
+    g_reverb.combR[3].init(g_reverbCombR4, 1617);
+
+    // オールパス初期化（左チャンネル）
+    g_reverb.apL[0].init(g_reverbApL1, 225);
+    g_reverb.apL[1].init(g_reverbApL2, 341);
+
+    // オールパス初期化（右チャンネル）
+    g_reverb.apR[0].init(g_reverbApR1, 441);
+    g_reverb.apR[1].init(g_reverbApR2, 556);
+
+    // バッファクリア
+    memset(g_reverbCombL1, 0, sizeof(g_reverbCombL1));
+    memset(g_reverbCombL2, 0, sizeof(g_reverbCombL2));
+    memset(g_reverbCombL3, 0, sizeof(g_reverbCombL3));
+    memset(g_reverbCombL4, 0, sizeof(g_reverbCombL4));
+    memset(g_reverbCombR1, 0, sizeof(g_reverbCombR1));
+    memset(g_reverbCombR2, 0, sizeof(g_reverbCombR2));
+    memset(g_reverbCombR3, 0, sizeof(g_reverbCombR3));
+    memset(g_reverbCombR4, 0, sizeof(g_reverbCombR4));
+    memset(g_reverbApL1, 0, sizeof(g_reverbApL1));
+    memset(g_reverbApL2, 0, sizeof(g_reverbApL2));
+    memset(g_reverbApR1, 0, sizeof(g_reverbApR1));
+    memset(g_reverbApR2, 0, sizeof(g_reverbApR2));
+
+    // デフォルトパラメータ設定
+    updateReverbParams(16384);  // 50%のルームサイズ
+}
+
+void updateReverbParams(int16_t roomSize_q15) {
+    // ルームサイズ (0-32767) からフィードバックとダンピングを計算
+    // roomSize: 0% = タイト, 100% = 大ホール
+
+    // フィードバックゲイン: 0.70 → 0.95
+    // feedback_q15 = 22937 + (roomSize_q15 * 8192 / 32767)
+    int16_t feedback_q15 = 22937 + ((int32_t)roomSize_q15 * 8192 >> 15);
+
+    // ダンピング: 0.20 → 0.80 (逆転：小さいルームほど高域減衰大)
+    // damping_q15 = 26214 - (roomSize_q15 * 19661 / 32767)
+    int16_t damping_q15 = 26214 - ((int32_t)roomSize_q15 * 19661 >> 15);
+
+    // 全コムフィルタに適用
+    for (int i = 0; i < 4; i++) {
+        g_reverb.combL[i].feedback_q15 = feedback_q15;
+        g_reverb.combL[i].damping_q15 = damping_q15;
+        g_reverb.combR[i].feedback_q15 = feedback_q15;
+        g_reverb.combR[i].damping_q15 = damping_q15;
+    }
+}
+
+void processReverb(int16_t inL, int16_t inR, int16_t& outL, int16_t& outR) {
+    // 1. コムフィルタ処理（並列）
+    int32_t combOutL = 0;
+    int32_t combOutR = 0;
+
+    for (int i = 0; i < 4; i++) {
+        combOutL += g_reverb.combL[i].process(inL);
+        combOutR += g_reverb.combR[i].process(inR);
+    }
+
+    // 4で割る（4つのコムフィルタの平均）
+    int16_t apInL = (int16_t)(combOutL >> 2);
+    int16_t apInR = (int16_t)(combOutR >> 2);
+
+    // 2. オールパス処理（直列）
+    int16_t apOutL = g_reverb.apL[0].process(apInL);
+    apOutL = g_reverb.apL[1].process(apOutL);
+
+    int16_t apOutR = g_reverb.apR[0].process(apInR);
+    apOutR = g_reverb.apR[1].process(apOutR);
+
+    outL = apOutL;
+    outR = apOutR;
+}
+
 const char* getModeString(PlayMode m) {
     return (m == MODE_GRANULAR) ? "GRAN" : "REV ";
 }
 
 const char* getPot4ModeString(Pot4Mode m) {
     switch(m) {
-        case MODE_TEXTURE:     return "TEX";
-        case MODE_SPREAD:      return "SPR";
-        case MODE_FEEDBACK:    return "FBK";
-        case MODE_LOOP_LENGTH: return "LEN";
-        case MODE_CLK_RESOLUTION: return "CLK";
-        default:               return "---";
+        case MODE_TEXTURE:         return "TEX";
+        case MODE_SPREAD:          return "SPR";
+        case MODE_FEEDBACK:        return "FBK";
+        case MODE_LOOP_LENGTH:     return "LEN";
+        case MODE_CLK_RESOLUTION:  return "CLK";
+        case MODE_REVERB_MIX:      return "RVB MIX";
+        case MODE_REVERB_ROOM:     return "RVB ROOM";
+        default:                   return "---";
     }
 }
