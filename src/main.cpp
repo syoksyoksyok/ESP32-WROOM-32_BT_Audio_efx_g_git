@@ -95,8 +95,8 @@ constexpr int16_t PAN_CENTER_Q15 = 23170;  // ~0.707 in Q15 format for center pa
 // SECTION: Audio Engine Constants
 // ================================================================= //
 constexpr int RING_BUFFER_SIZE = 4096;
-#define GRAIN_BUFFER_SIZE 131072  // 256KB buffer (was 32768)
-#define MAX_GRAIN_SIZE    131072  // Max ~3 seconds (was 65536)
+#define GRAIN_BUFFER_SIZE 131072  // 256KB buffer in internal SRAM (tight!)
+#define MAX_GRAIN_SIZE    131072  // Max ~3 seconds at 44.1kHz
 #define GRAIN_BUFFER_MASK (GRAIN_BUFFER_SIZE - 1)
 constexpr int MAX_GRAINS = 10;  // Increased from 6 for richer visuals
 constexpr int MIN_GRAIN_SIZE = 512;  // Min ~11.6ms (was 128)
@@ -270,7 +270,7 @@ BluetoothA2DPSink a2dp_sink;
 bool g_inverse_mode = false;
 // Audio Buffers
 AudioRingBuffer g_ringBuffer;
-EXT_RAM_ATTR int16_t g_grainBuffer[GRAIN_BUFFER_SIZE];  // Place large buffer in PSRAM
+int16_t g_grainBuffer[GRAIN_BUFFER_SIZE];  // 256KB in internal SRAM (ESP32-WROOM-32)
 volatile uint16_t g_grainWritePos = 0;
 bool g_grainBufferReady = false;
 
@@ -390,51 +390,29 @@ void setup() {
     Serial.begin(115200);
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // メモリ診断（起動時）
+    // メモリ診断（起動時）ESP32-WROOM-32 (PSRAMなし)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     delay(1000);  // シリアルモニタ接続待ち
     Serial.println("\n========================================");
-    Serial.println("ESP32 Memory Diagnostics");
+    Serial.println("ESP32-WROOM-32 Memory Status");
     Serial.println("========================================");
 
-    // PSRAMの有無を確認
-    if (psramFound()) {
-        Serial.println("✅ PSRAM: DETECTED");
-        Serial.printf("   Total PSRAM: %u bytes (%.2f MB)\n",
-            ESP.getPsramSize(), ESP.getPsramSize() / 1024.0 / 1024.0);
-        Serial.printf("   Free PSRAM:  %u bytes (%.2f MB)\n",
-            ESP.getFreePsram(), ESP.getFreePsram() / 1024.0 / 1024.0);
-    } else {
-        Serial.println("❌ PSRAM: NOT DETECTED");
-        Serial.println("⚠️  WARNING: g_grainBuffer (256KB) is in internal SRAM!");
-    }
-
-    // 内部SRAMの状況
-    Serial.printf("\n📊 Internal SRAM:\n");
+    // 内部SRAMの状況（256KBバッファ使用中）
+    Serial.printf("📊 Internal SRAM:\n");
     Serial.printf("   Total Heap:  %u bytes (%.2f KB)\n",
         ESP.getHeapSize(), ESP.getHeapSize() / 1024.0);
-    Serial.printf("   Free Heap:   %u bytes (%.2f KB)\n",
+    Serial.printf("   Free Heap:   %u bytes (%.2f KB) ⚠️ Tight!\n",
         ESP.getFreeHeap(), ESP.getFreeHeap() / 1024.0);
     Serial.printf("   Min Free:    %u bytes (%.2f KB)\n",
         ESP.getMinFreeHeap(), ESP.getMinFreeHeap() / 1024.0);
 
-    // グレインバッファのサイズと位置
-    Serial.printf("\n🎵 Audio Buffers:\n");
-    Serial.printf("   g_grainBuffer size: %u bytes (%.2f KB)\n",
+    // グレインバッファ情報
+    Serial.printf("\n🎵 Audio Buffer (in internal SRAM):\n");
+    Serial.printf("   g_grainBuffer: %u bytes (%.2f KB)\n",
         sizeof(g_grainBuffer), sizeof(g_grainBuffer) / 1024.0);
-    Serial.printf("   g_grainBuffer addr: %p\n", (void*)g_grainBuffer);
-
-    // メモリアドレスから配置場所を推測
-    uint32_t addr = (uint32_t)g_grainBuffer;
-    if (addr >= 0x3F800000 && addr < 0x3FC00000) {
-        Serial.println("   Location: External PSRAM ✅");
-    } else if (addr >= 0x3FF00000 && addr < 0x40000000) {
-        Serial.println("   Location: Internal DRAM0 ⚠️");
-    } else if (addr >= 0x3FFE0000 && addr < 0x3FFF0000) {
-        Serial.println("   Location: Internal DRAM1 ⚠️");
-    } else {
-        Serial.printf("   Location: Unknown (0x%08X)\n", addr);
-    }
+    Serial.printf("   Address: %p\n", (void*)g_grainBuffer);
+    Serial.printf("   Duration: ~%.1f seconds at 44.1kHz\n",
+        GRAIN_BUFFER_SIZE / 44100.0);
 
     Serial.println("========================================\n");
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
